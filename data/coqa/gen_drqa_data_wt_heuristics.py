@@ -16,6 +16,7 @@ nlp = StanfordCoreNLP('http://localhost:9000')
 UNK = 'unknown'
 YES = 'yes'
 NO = 'no'
+ARTICLE_REGEX = re.compile(r'\b(a|an|the)\b', re.UNICODE)
 
 
 def _str(s):
@@ -55,8 +56,7 @@ def normalize_answer(s):
     """Lower text and remove punctuation, storys and extra whitespace."""
 
     def remove_articles(text):
-        regex = re.compile(r'\b(a|an|the)\b', re.UNICODE)
-        return re.sub(regex, ' ', text)
+        return re.sub(ARTICLE_REGEX, ' ', text)
 
     def white_space_fix(text):
         return ' '.join(text.split())
