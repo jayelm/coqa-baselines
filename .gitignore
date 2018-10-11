@@ -1,8 +1,15 @@
 __pycache__/
 *.pyc
 
-data
-wordvecs
 lib
 
+data/coqa/coqa-train-v1.0.json
+data/coqa/coqa-dev-v1.0.json
+data/coqa/coqa-train-v1.0-processed.json
+data/coqa/coqa-dev-v1.0-processed.json
 
+data/glove/glove.*.zip
+data/glove/glove.*.txt
+
+data/quac/train.json
+data/quac/val.json
