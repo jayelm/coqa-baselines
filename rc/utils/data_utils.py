@@ -3,7 +3,10 @@
 Module to handle getting data loading classes and helper functions.
 """
 
-import json
+try:
+    import ujson as json
+except ImportError:
+    import json
 import io
 import torch
 import numpy as np
@@ -12,6 +15,7 @@ from collections import Counter, defaultdict
 from torch.utils.data import Dataset
 from . import constants as Constants
 from .timer import Timer
+from tqdm import tqdm
 
 
 ################################################################################
@@ -19,9 +23,13 @@ from .timer import Timer
 ################################################################################
 
 def prepare_datasets(config):
-    train_set = None if config['trainset'] is None else CoQADataset(config['trainset'], config)
-    dev_set = None if config['devset'] is None else CoQADataset(config['devset'], config)
-    test_set = None if config['testset'] is None else CoQADataset(config['testset'], config)
+    if config['dialog_batched']:
+        ds = DialogBatchedCoQADataset
+    else:
+        ds = CoQADataset
+    train_set = None if config['trainset'] is None else ds(config['trainset'], config)
+    dev_set = None if config['devset'] is None else ds(config['devset'], config)
+    test_set = None if config['testset'] is None else ds(config['testset'], config)
     return {'train': train_set, 'dev': dev_set, 'test': test_set}
 
 ################################################################################
@@ -98,6 +106,172 @@ class CoQADataset(Dataset):
         return sample
 
 
+def load_coqa(fp, wv):
+    """
+    Load CoQA dataset from given filepath. Filepath MUST be processed with
+    Danqi's script!
+    """
+    with open(fp, 'r') as f_coqa:
+        coqa = json.load(f_coqa)
+
+    # Transform data into model-compatible np arrays
+    with torch.no_grad():
+        inputs = []
+        for ex in tqdm(coqa['data'], desc='Loading CoQA data'):
+            # Determine lengths
+            dialog_len = len(ex['qas'])
+            context_len = len(ex['annotated_context']['word'])
+            # One context_len for start, one for end, + 3 (no ans, yes, no)
+            q_lengths = np.array(
+                [len(qa['annotated_question']['word']) for qa in ex['qas']],
+                dtype=np.int64
+            )
+            max_q_len = int(max(q_lengths))
+
+            # Retrieve context 
+            c = wv.to_idx(ex['annotated_context']['word'])
+            # Unsqueeze and tile across questions
+            c_tiled = np.tile(np.expand_dims(c, 0), (dialog_len, 1))
+            c_mask = np.zeros((dialog_len, context_len), dtype=np.uint8)
+
+            # TODO: Compute exact match indicators
+            em = (np.random.rand(dialog_len, context_len) < 0.3).astype(
+                np.float32)
+            em = np.expand_dims(em, 2)
+
+            # Transform context into indices
+            # Fill with padding first
+            q = np.full((dialog_len, max_q_len), PAD, dtype=np.int64)
+            q_mask = np.ones((dialog_len, max_q_len), dtype=np.uint8)
+            spans = np.zeros((dialog_len, span_len), dtype=np.float32)
+            for i, qa in enumerate(ex['qas']):
+                # Convert qs to indices and fill question/mask arrays
+                q_idx = wv.to_idx(qa['annotated_question']['word'])
+                q_len = len(q_idx)
+                q[i, :q_len] = q_idx
+                q_mask[i, :q_len] = 0.0
+
+                # TODO: Yes, No, Unans. Check if answer is YES, or NO
+
+                # Fill span arrays
+                span_start = qa['answer_span'][0]
+                span_end = qa['answer_span'][1]
+                spans[i, span_start] = 1.0
+                spans[i, context_len + span_end] = 1.0
+
+            inputs.append({
+                # TODO: Cuda
+                'q': torch.tensor(q).cuda(),  # (dialog_len, max_q_len)
+                'q_mask': torch.tensor(q_mask).cuda(),  # (dialog_len, max_q_len)
+                'xd': torch.tensor(c_tiled).cuda(),  # (dialog_len, max_d_len)
+                'xd_mask': torch.tensor(c_mask).cuda(),  # (dialog_len, max_d_len)
+                'xd_f': torch.tensor(em).cuda(),  # (dialog_len, max_d_len, nfeat)
+                'targets': torch.tensor(spans).cuda() # (dialog_len)
+            })
+
+        return inputs
+
+class DialogBatchedCoQADataset(Dataset):
+    """CoQA dataset, but batched by dialogs"""
+
+    def __init__(self, filename, config):
+        timer = Timer('Load %s' % filename)
+        self.filename = filename
+        self.config = config
+        paragraph_lens = []
+        question_lens = []
+        self.vocab = Counter()
+
+        coqa = read_json(filename)
+
+        self.examples = []
+
+        for ex_i, ex in tqdm(enumerate(coqa['data']), desc='Loading CoQA data',
+                             total=len(coqa['data'])):
+            # Determine lengths
+            dialog_len = len(ex['qas'])
+            document_len = len(ex['annotated_context']['word'])
+            q_lengths = np.array(
+                [len(qa['annotated_question']['word']) for qa in ex['qas']],
+                dtype=np.int64
+            )
+            max_q_len = int(max(q_lengths))
+
+            # Retrieve context 
+            document = ex['annotated_context']
+
+            questions = []
+            answers = []
+            answer_spans = []
+
+            history = []
+            histories = []
+
+            for qa in ex['qas']:
+                # Add question to list
+                q = qa['annotated_question']
+                questions.append(q)
+
+                # Add answer spans to list
+                a = qa['answer_span']
+                answer_spans.append(a)
+
+                # Add real answers to list, + additional answers
+                this_answer = [qa['answer']]
+                if 'additional_answers' in qa:
+                    this_answer += qa['additional_answers']
+                answers.append(this_answer)
+
+                # Increment vocab
+                for w in q['word']:
+                    self.vocab[w] += 1
+                # Use actual answer text, not span
+                for w in qa['annotated_answer']['word']:
+                    self.vocab[w] += 1
+                # Add document vocab several times
+                for w in document['word']:
+                    self.vocab[w] += 1
+
+                # History
+                temp = []
+                n_history = len(history) if config['n_history'] < 0 else min(config['n_history'], len(history))
+                if n_history > 0:
+                    for i, (q, a) in enumerate(history[-n_history:]):
+                        d = n_history - i
+                        temp.append('<Q{}>'.format(d))
+                        temp.extend(q)
+                        temp.append('<A{}>'.format(d))
+                        temp.extend(a)
+                histories.append(temp)
+                history.append((qa['annotated_question']['word'], qa['annotated_answer']['word']))
+
+            assert len(histories) == len(questions)
+            assert len(histories) == len(answers)
+            assert len(questions) == dialog_len
+            self.examples.append({
+                'id': ex_i,
+                'dialog_len': dialog_len,
+                'document_len': document_len,
+                'max_q_len': max_q_len,
+                'q_lengths': q_lengths,
+                'evidence': document,
+                'questions': questions,
+                'answers': answers,
+                'histories': histories,
+                'targets': answer_spans,
+                'raw_evidence': ex['context']
+            })
+
+        timer.finish()
+
+    def __len__(self):
+        return 50 if self.config['debug'] else len(self.examples)
+
+    def __getitem__(self, idx):
+        return self.examples[idx]
+
+
+
 ################################################################################
 # Read & Write Helper Functions #
 ################################################################################
@@ -172,6 +346,122 @@ def sanitize_input(sample_batch, config, vocab, feature_dict, training=True):
         if 'id' in ex:
             sanitized_batch['id'].append(ex['id'])
     return sanitized_batch
+
+
+def sanitize_input_dialog_batched(ex, config, vocab,
+                                  feature_dict, training=True):
+    """
+    Reformats sample_batch for easy vectorization - dialog batched version.
+    Args:
+        sample_batch: the sampled batch, yet to be sanitized or vectorized.
+        vocab: word embedding dictionary.
+        feature_dict: the features we want to concatenate to our embeddings.
+        train: train or test?
+    """
+    sanitized_ex = {}
+    evidence = ex['evidence']['word']
+    processed_e = [vocab[w] if w in vocab else vocab[Constants._UNK_TOKEN]
+                   for w in evidence]
+    offsets = ex['evidence']['offsets']
+
+    if config['predict_raw_text']:
+        sanitized_ex['raw_evidence_text'] = ex['raw_evidence']
+        sanitized_ex['offsets'] = offsets
+    else:
+        sanitized_ex['evidence_text'] = evidence
+
+    sanitized_ex['evidence'] = processed_e
+
+    # Just transfer over targets/answers directly
+    sanitized_ex['targets'] = ex['targets']
+    sanitized_ex['answers'] = ex['answers']
+    sanitized_ex['id'] = ex['id']
+
+    processed_qs = []
+    features = []
+
+    for annotated_question, history in zip(ex['questions'],
+                                           ex['histories']):
+        question = annotated_question['word']
+        processed_q = [
+            vocab[w] if w in vocab else vocab[Constants._UNK_TOKEN]
+            for w in question
+        ]
+
+        processed_qs.append(processed_q)
+
+        features.append(featurize(annotated_question, ex['evidence'],
+                                  feature_dict, history))
+
+    sanitized_ex['questions'] = processed_qs
+    sanitized_ex['features'] = features
+
+    return sanitized_ex
+
+
+def vectorize_input_dialog_batched(batch, config, training=True, device=None):
+    if not batch:
+        return None
+
+    # Relevant parameters:
+    batch_size = len(batch['questions'])
+
+    # Initialize all relevant parameters to None:
+    targets = None
+
+    # Part 1: Question Words
+    # Batch questions ( sum_bs(n_sect), len_q)
+    max_q_len = max([len(q) for q in batch['questions']])
+    xq = torch.LongTensor(batch_size, max_q_len).fill_(0)
+    xq_mask = torch.ByteTensor(batch_size, max_q_len).fill_(1)
+    for i, q in enumerate(batch['questions']):
+        xq[i, :len(q)].copy_(torch.LongTensor(q))
+        xq_mask[i, :len(q)].fill_(0)
+
+    # Part 2: Document Words
+    max_d_len = len(batch['evidence'])
+    xd = torch.LongTensor(batch_size, max_d_len).fill_(0)
+    # xd mask is just all 0s since context is the same
+    xd_mask = torch.ByteTensor(batch_size, max_d_len).fill_(0)
+    xd_f = torch.zeros(batch_size, max_d_len, config['num_features']) if config['num_features'] > 0 else None
+
+    # 2(a): fill up DrQA section variables
+    evidence_tensor = torch.LongTensor(batch['evidence'])
+    for i in range(batch_size):
+        xd[i].copy_(evidence_tensor)
+        if config['num_features'] > 0:
+            xd_f[i].copy_(batch['features'][i])
+
+    # Part 3: Target representations
+    if config['sum_loss']:  # For sum_loss "targets" acts as a mask rather than indices.
+        targets = torch.ByteTensor(batch_size, max_d_len, 2).fill_(0)
+        for i, _targets in enumerate(batch['targets']):
+            for s, e in _targets:
+                targets[i, s, 0] = 1
+                targets[i, e, 1] = 1
+    else:
+        targets = torch.LongTensor(batch_size, 2)
+        for i, _target in enumerate(batch['targets']):
+            targets[i][0] = _target[0]
+            targets[i][1] = _target[1]
+
+    torch.set_grad_enabled(training)
+    example = {'batch_size': batch_size,
+               'answers': batch['answers'],
+               'xq': xq.to(device) if device else xq,
+               'xq_mask': xq_mask.to(device) if device else xq_mask,
+               'xd': xd.to(device) if device else xd,
+               'xd_mask': xd_mask.to(device) if device else xd_mask,
+               'xd_f': xd_f.to(device) if device else xd_f,
+               'targets': targets.to(device) if device else targets}
+
+    if config['predict_raw_text']:
+        example['raw_evidence_text'] = batch['raw_evidence_text']
+        example['offsets'] = batch['offsets']
+    else:
+        example['evidence_text'] = batch['evidence_text']
+    return example
+
 
 
 def vectorize_input(batch, config, training=True, device=None):

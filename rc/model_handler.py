@@ -9,7 +9,7 @@ from torch.utils.data import DataLoader
 from utils.timer import Timer
 from utils.logger import ModelLogger
 from utils.eval_utils import AverageMeter
-from utils.data_utils import sanitize_input, vectorize_input
+from utils.data_utils import sanitize_input, vectorize_input, sanitize_input_dialog_batched, vectorize_input_dialog_batched
 
 
 class ModelHandler(object):
@@ -18,6 +18,8 @@ class ModelHandler(object):
     """
 
     def __init__(self, config):
+        if config['dialog_batched'] and config['batch_size'] != 1:
+            raise ValueError("Must specify batch size == 1 with dialog batching")
         self.logger = ModelLogger(config, dirname=config['dir'], pretrained=config['pretrained'])
         self.dirname = self.logger.dirname
         cuda = config['cuda']
@@ -160,9 +162,17 @@ class ModelHandler(object):
         start_time = time.time()
         output = []
         for step, input_batch in enumerate(data_loader):
-            input_batch = sanitize_input(input_batch, self.config, self.model.word_dict,
-                                         self.model.feature_dict, training=training)
-            x_batch = vectorize_input(input_batch, self.config, training=training, device=self.device)
+            if self.config['dialog_batched']:
+                input_batch = input_batch[0]
+                sanitizer = sanitize_input_dialog_batched
+                vectorizer = vectorize_input_dialog_batched
+            else:
+                sanitizer = sanitize_input
+                vectorizer = vectorize_input
+            input_batch = sanitizer(input_batch, self.config, self.model.word_dict,
+                                    self.model.feature_dict, training=training)
+            x_batch = vectorizer(input_batch, self.config, training=training,
+                                 device=self.device)
             if not x_batch:
                 continue  # When there are no target spans present in the batch
 
