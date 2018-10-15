@@ -118,9 +118,10 @@ class SentenceHistoryAttn(nn.Module):
     Crucially, output is a lower-triangular matrix. So information only flows
     one way.
     """
-    def __init__(self, input_size, identity=False):
+    def __init__(self, input_size, cuda=False):
         super(SentenceHistoryAttn, self).__init__()
         self.linear = nn.Linear(input_size, input_size)
+        self.cuda = cuda
 
     def forward(self, x):
         """
@@ -139,6 +140,8 @@ class SentenceHistoryAttn(nn.Module):
         # Score mask
         scores_mask = torch.ones(scores.size(), dtype=torch.uint8,
                                  requires_grad=False)
+        if self.cuda:
+            scores_mask = scores_mask.cuda()
         scores_mask = torch.triu(scores_mask, diagonal=1)
         scores.masked_fill_(scores_mask, -float('inf'))
 
