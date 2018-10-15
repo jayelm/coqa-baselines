@@ -1,0 +1,1069 @@
+<> <> <> Starting Timer [Load data/coqa.train.heuristic.json] <> <> <>
+Load 7199 paragraphs, 108647 examples.
+Paragraph length: avg = 323.4, max = 1210
+Question length: avg = 6.5, max = 48
+<> <> <> Finished Timer [Load data/coqa.train.heuristic.json] <> <> <> Total time elapsed: 0h 00m 28s <> <> <>
+<> <> <> Starting Timer [Load data/coqa.dev.heuristic.json] <> <> <>
+Load 500 paragraphs, 7983 examples.
+Paragraph length: avg = 315.8, max = 1005
+Question length: avg = 6.5, max = 24
+<> <> <> Finished Timer [Load data/coqa.dev.heuristic.json] <> <> <> Total time elapsed: 0h 00m 02s <> <> <>
+Train vocab: 83283
+Pruned train vocab: 17579
+<> <> <> Starting Timer [Load wordvecs/coqa.crawl-300d-2M.vec] <> <> <>
+Embeddings: vocab = 80135, embed_size = 300
+<> <> <> Finished Timer [Load wordvecs/coqa.crawl-300d-2M.vec] <> <> <> Total time elapsed: 0h 00m 18s <> <> <>
+Added word: `` (train_freq = 421231)
+Added word: '' (train_freq = 419526)
+Added word: n't (train_freq = 88535)
+Added word: ` (train_freq = 22733)
+Added word: _ (train_freq = 17318)
+Added word: o'clock (train_freq = 2026)
+Added word: US$ (train_freq = 480)
+Added word: Phonny (train_freq = 458)
+Added word: Haskers (train_freq = 404)
+Added word: Glutts (train_freq = 368)
+Added 139 words to the vocab in total.
+# features: 82
+w_embedding.weight: torch.Size([80276, 300])
+qemb_match.linear.weight: torch.Size([300, 300])
+qemb_match.linear.bias: torch.Size([300])
+doc_rnn.rnns.0.weight_ih_l0: torch.Size([1200, 682])
+doc_rnn.rnns.0.weight_hh_l0: torch.Size([1200, 300])
+doc_rnn.rnns.0.bias_ih_l0: torch.Size([1200])
+doc_rnn.rnns.0.bias_hh_l0: torch.Size([1200])
+doc_rnn.rnns.0.weight_ih_l0_reverse: torch.Size([1200, 682])
+doc_rnn.rnns.0.weight_hh_l0_reverse: torch.Size([1200, 300])
+doc_rnn.rnns.0.bias_ih_l0_reverse: torch.Size([1200])
+doc_rnn.rnns.0.bias_hh_l0_reverse: torch.Size([1200])
+doc_rnn.rnns.1.weight_ih_l0: torch.Size([1200, 600])
+doc_rnn.rnns.1.weight_hh_l0: torch.Size([1200, 300])
+doc_rnn.rnns.1.bias_ih_l0: torch.Size([1200])
+doc_rnn.rnns.1.bias_hh_l0: torch.Size([1200])
+doc_rnn.rnns.1.weight_ih_l0_reverse: torch.Size([1200, 600])
+doc_rnn.rnns.1.weight_hh_l0_reverse: torch.Size([1200, 300])
+doc_rnn.rnns.1.bias_ih_l0_reverse: torch.Size([1200])
+doc_rnn.rnns.1.bias_hh_l0_reverse: torch.Size([1200])
+doc_rnn.rnns.2.weight_ih_l0: torch.Size([1200, 600])
+doc_rnn.rnns.2.weight_hh_l0: torch.Size([1200, 300])
+doc_rnn.rnns.2.bias_ih_l0: torch.Size([1200])
+doc_rnn.rnns.2.bias_hh_l0: torch.Size([1200])
+doc_rnn.rnns.2.weight_ih_l0_reverse: torch.Size([1200, 600])
+doc_rnn.rnns.2.weight_hh_l0_reverse: torch.Size([1200, 300])
+doc_rnn.rnns.2.bias_ih_l0_reverse: torch.Size([1200])
+doc_rnn.rnns.2.bias_hh_l0_reverse: torch.Size([1200])
+question_rnn.rnns.0.weight_ih_l0: torch.Size([1200, 300])
+question_rnn.rnns.0.weight_hh_l0: torch.Size([1200, 300])
+question_rnn.rnns.0.bias_ih_l0: torch.Size([1200])
+question_rnn.rnns.0.bias_hh_l0: torch.Size([1200])
+question_rnn.rnns.0.weight_ih_l0_reverse: torch.Size([1200, 300])
+question_rnn.rnns.0.weight_hh_l0_reverse: torch.Size([1200, 300])
+question_rnn.rnns.0.bias_ih_l0_reverse: torch.Size([1200])
+question_rnn.rnns.0.bias_hh_l0_reverse: torch.Size([1200])
+question_rnn.rnns.1.weight_ih_l0: torch.Size([1200, 600])
+question_rnn.rnns.1.weight_hh_l0: torch.Size([1200, 300])
+question_rnn.rnns.1.bias_ih_l0: torch.Size([1200])
+question_rnn.rnns.1.bias_hh_l0: torch.Size([1200])
+question_rnn.rnns.1.weight_ih_l0_reverse: torch.Size([1200, 600])
+question_rnn.rnns.1.weight_hh_l0_reverse: torch.Size([1200, 300])
+question_rnn.rnns.1.bias_ih_l0_reverse: torch.Size([1200])
+question_rnn.rnns.1.bias_hh_l0_reverse: torch.Size([1200])
+question_rnn.rnns.2.weight_ih_l0: torch.Size([1200, 600])
+question_rnn.rnns.2.weight_hh_l0: torch.Size([1200, 300])
+question_rnn.rnns.2.bias_ih_l0: torch.Size([1200])
+question_rnn.rnns.2.bias_hh_l0: torch.Size([1200])
+question_rnn.rnns.2.weight_ih_l0_reverse: torch.Size([1200, 600])
+question_rnn.rnns.2.weight_hh_l0_reverse: torch.Size([1200, 300])
+question_rnn.rnns.2.bias_ih_l0_reverse: torch.Size([1200])
+question_rnn.rnns.2.bias_hh_l0_reverse: torch.Size([1200])
+self_attn.linear.weight: torch.Size([1, 1800])
+self_attn.linear.bias: torch.Size([1])
+start_attn.linear.weight: torch.Size([1800, 1800])
+start_attn.linear.bias: torch.Size([1800])
+end_attn.linear.weight: torch.Size([1800, 3600])
+end_attn.linear.bias: torch.Size([1800])
+#Parameters = 46364101
+
+<> <> <> Starting Timer [Train] <> <> <>
+
+>>> Dev Epoch: [0 / 50]
+[predict-0] step: [0 / 249] | f1 = 3.20 | em = 0.00
+used_time: 0.57s
+<> <> Timer [Train] <> <> Interval [Validation Epoch 0]: 0h 01m 37s <> <>
+Validation Epoch 0 -- F1: 3.27, EM: 0.02 --
+
+>>> Train Epoch: [1 / 50]
+[train-1] step: [0 / 3395] | exs = 32 | loss = 11.4590 | f1 = 4.60 | em = 0.00
+used_time: 0.75s
+[train-1] step: [400 / 3395] | exs = 12832 | loss = 7.0132 | f1 = 25.54 | em = 21.88
+used_time: 209.49s
+[train-1] step: [800 / 3395] | exs = 25632 | loss = 6.3096 | f1 = 32.23 | em = 25.00
+used_time: 416.68s
+[train-1] step: [1200 / 3395] | exs = 38432 | loss = 6.5501 | f1 = 32.15 | em = 25.00
+used_time: 624.65s
+[train-1] step: [1600 / 3395] | exs = 51232 | loss = 5.7600 | f1 = 26.07 | em = 15.62
+used_time: 833.54s
+[train-1] step: [2000 / 3395] | exs = 64032 | loss = 6.5840 | f1 = 22.24 | em = 15.62
+used_time: 1045.06s
+[train-1] step: [2400 / 3395] | exs = 76832 | loss = 5.3082 | f1 = 35.50 | em = 25.00
+used_time: 1253.66s
+[train-1] step: [2800 / 3395] | exs = 89632 | loss = 4.8837 | f1 = 43.97 | em = 28.12
+used_time: 1463.30s
+[train-1] step: [3200 / 3395] | exs = 102432 | loss = 6.8822 | f1 = 28.80 | em = 28.12
+used_time: 1671.40s
+<> <> Timer [Train] <> <> Interval [Training Epoch 1]: 0h 29m 36s <> <>
+Training Epoch 1 -- Loss: 6.4104, F1: 31.38, EM: 22.21 --
+
+>>> Dev Epoch: [1 / 50]
+[predict-1] step: [0 / 249] | f1 = 47.89 | em = 42.19
+used_time: 0.36s
+<> <> Timer [Train] <> <> Interval [Validation Epoch 1]: 0h 01m 35s <> <>
+Validation Epoch 1 -- F1: 53.16, EM: 42.77 --
+!!! Updated: F1: 53.16, EM: 42.77
+
+>>> Train Epoch: [2 / 50]
+[train-2] step: [0 / 3395] | exs = 108679 | loss = 6.5966 | f1 = 35.28 | em = 25.00
+used_time: 0.50s
+[train-2] step: [400 / 3395] | exs = 121479 | loss = 5.2592 | f1 = 49.90 | em = 40.62
+used_time: 207.84s
+[train-2] step: [800 / 3395] | exs = 134279 | loss = 5.9437 | f1 = 39.53 | em = 37.50
+used_time: 417.02s
+[train-2] step: [1200 / 3395] | exs = 147079 | loss = 5.2806 | f1 = 43.81 | em = 37.50
+used_time: 624.73s
+[train-2] step: [1600 / 3395] | exs = 159879 | loss = 5.0517 | f1 = 40.83 | em = 37.50
+used_time: 833.39s
+[train-2] step: [2000 / 3395] | exs = 172679 | loss = 4.1176 | f1 = 53.86 | em = 40.62
+used_time: 1039.67s
+[train-2] step: [2400 / 3395] | exs = 185479 | loss = 4.6721 | f1 = 51.71 | em = 40.62
+used_time: 1251.10s
+[train-2] step: [2800 / 3395] | exs = 198279 | loss = 5.8680 | f1 = 40.06 | em = 31.25
+used_time: 1459.99s
+[train-2] step: [3200 / 3395] | exs = 211079 | loss = 6.0152 | f1 = 37.98 | em = 18.75
+used_time: 1670.21s
+<> <> Timer [Train] <> <> Interval [Training Epoch 2]: 0h 29m 31s <> <>
+Training Epoch 2 -- Loss: 5.2466, F1: 40.74, EM: 29.62 --
+
+>>> Dev Epoch: [2 / 50]
+[predict-2] step: [0 / 249] | f1 = 58.53 | em = 50.78
+used_time: 0.36s
+<> <> Timer [Train] <> <> Interval [Validation Epoch 2]: 0h 01m 37s <> <>
+Validation Epoch 2 -- F1: 59.75, EM: 50.12 --
+!!! Updated: F1: 59.75, EM: 50.12
+
+>>> Train Epoch: [3 / 50]
+[train-3] step: [0 / 3395] | exs = 217326 | loss = 5.0346 | f1 = 45.90 | em = 28.12
+used_time: 0.56s
+[train-3] step: [400 / 3395] | exs = 230126 | loss = 6.8172 | f1 = 37.26 | em = 21.88
+used_time: 206.26s
+[train-3] step: [800 / 3395] | exs = 242926 | loss = 5.6247 | f1 = 39.22 | em = 21.88
+used_time: 412.88s
+[train-3] step: [1200 / 3395] | exs = 255726 | loss = 4.7891 | f1 = 39.27 | em = 28.12
+used_time: 618.73s
+[train-3] step: [1600 / 3395] | exs = 268526 | loss = 4.4412 | f1 = 45.98 | em = 34.38
+used_time: 826.75s
+[train-3] step: [2000 / 3395] | exs = 281326 | loss = 4.7072 | f1 = 43.80 | em = 28.12
+used_time: 1036.11s
+[train-3] step: [2400 / 3395] | exs = 294126 | loss = 5.4891 | f1 = 44.54 | em = 34.38
+used_time: 1243.93s
+[train-3] step: [2800 / 3395] | exs = 306926 | loss = 4.6821 | f1 = 47.72 | em = 31.25
+used_time: 1453.80s
+[train-3] step: [3200 / 3395] | exs = 319726 | loss = 4.9575 | f1 = 42.90 | em = 37.50
+used_time: 1663.03s
+<> <> Timer [Train] <> <> Interval [Training Epoch 3]: 0h 29m 26s <> <>
+Training Epoch 3 -- Loss: 4.8317, F1: 44.70, EM: 33.10 --
+
+>>> Dev Epoch: [3 / 50]
+[predict-3] step: [0 / 249] | f1 = 55.33 | em = 47.66
+used_time: 0.36s
+<> <> Timer [Train] <> <> Interval [Validation Epoch 3]: 0h 01m 35s <> <>
+Validation Epoch 3 -- F1: 61.99, EM: 51.64 --
+!!! Updated: F1: 61.99, EM: 51.64
+
+>>> Train Epoch: [4 / 50]
+[train-4] step: [0 / 3395] | exs = 325973 | loss = 4.6159 | f1 = 49.94 | em = 37.50
+used_time: 0.83s
+[train-4] step: [400 / 3395] | exs = 338773 | loss = 3.5147 | f1 = 54.01 | em = 37.50
+used_time: 208.67s
+[train-4] step: [800 / 3395] | exs = 351573 | loss = 5.0114 | f1 = 43.96 | em = 37.50
+used_time: 417.29s
+[train-4] step: [1200 / 3395] | exs = 364373 | loss = 4.2298 | f1 = 47.68 | em = 40.62
+used_time: 622.56s
+[train-4] step: [1600 / 3395] | exs = 377173 | loss = 5.2424 | f1 = 45.50 | em = 31.25
+used_time: 829.43s
+[train-4] step: [2000 / 3395] | exs = 389973 | loss = 5.0098 | f1 = 46.61 | em = 34.38
+used_time: 1038.75s
+[train-4] step: [2400 / 3395] | exs = 402773 | loss = 4.5428 | f1 = 40.74 | em = 28.12
+used_time: 1247.82s
+[train-4] step: [2800 / 3395] | exs = 415573 | loss = 4.7062 | f1 = 40.89 | em = 31.25
+used_time: 1456.64s
+[train-4] step: [3200 / 3395] | exs = 428373 | loss = 5.4771 | f1 = 38.10 | em = 21.88
+used_time: 1667.25s
+<> <> Timer [Train] <> <> Interval [Training Epoch 4]: 0h 29m 32s <> <>
+Training Epoch 4 -- Loss: 4.5843, F1: 47.33, EM: 35.50 --
+
+>>> Dev Epoch: [4 / 50]
+[predict-4] step: [0 / 249] | f1 = 59.01 | em = 48.44
+used_time: 0.36s
+<> <> Timer [Train] <> <> Interval [Validation Epoch 4]: 0h 01m 36s <> <>
+Validation Epoch 4 -- F1: 64.75, EM: 55.14 --
+!!! Updated: F1: 64.75, EM: 55.14
+
+>>> Train Epoch: [5 / 50]
+[train-5] step: [0 / 3395] | exs = 434620 | loss = 4.3012 | f1 = 55.16 | em = 40.62
+used_time: 0.71s
+[train-5] step: [400 / 3395] | exs = 447420 | loss = 4.9847 | f1 = 45.17 | em = 31.25
+used_time: 208.66s
+[train-5] step: [800 / 3395] | exs = 460220 | loss = 4.9640 | f1 = 46.66 | em = 31.25
+used_time: 415.03s
+[train-5] step: [1200 / 3395] | exs = 473020 | loss = 4.9439 | f1 = 41.36 | em = 31.25
+used_time: 625.99s
+[train-5] step: [1600 / 3395] | exs = 485820 | loss = 3.4912 | f1 = 52.20 | em = 37.50
+used_time: 837.82s
+[train-5] step: [2000 / 3395] | exs = 498620 | loss = 4.4774 | f1 = 45.31 | em = 25.00
+used_time: 1046.88s
+[train-5] step: [2400 / 3395] | exs = 511420 | loss = 5.2043 | f1 = 43.63 | em = 34.38
+used_time: 1254.39s
+[train-5] step: [2800 / 3395] | exs = 524220 | loss = 4.1825 | f1 = 54.53 | em = 46.88
+used_time: 1461.02s
+[train-5] step: [3200 / 3395] | exs = 537020 | loss = 4.3359 | f1 = 35.50 | em = 18.75
+used_time: 1666.63s
+<> <> Timer [Train] <> <> Interval [Training Epoch 5]: 0h 29m 29s <> <>
+Training Epoch 5 -- Loss: 4.3919, F1: 49.09, EM: 37.14 --
+
+>>> Dev Epoch: [5 / 50]
+[predict-5] step: [0 / 249] | f1 = 64.73 | em = 57.03
+used_time: 0.36s
+<> <> Timer [Train] <> <> Interval [Validation Epoch 5]: 0h 01m 36s <> <>
+Validation Epoch 5 -- F1: 65.84, EM: 56.28 --
+!!! Updated: F1: 65.84, EM: 56.28
+
+>>> Train Epoch: [6 / 50]
+[train-6] step: [0 / 3395] | exs = 543267 | loss = 4.7171 | f1 = 43.36 | em = 28.12
+used_time: 0.64s
+[train-6] step: [400 / 3395] | exs = 556067 | loss = 4.4188 | f1 = 55.59 | em = 37.50
+used_time: 207.89s
+[train-6] step: [800 / 3395] | exs = 568867 | loss = 3.9863 | f1 = 39.38 | em = 28.12
+used_time: 419.11s
+[train-6] step: [1200 / 3395] | exs = 581667 | loss = 4.7882 | f1 = 45.23 | em = 37.50
+used_time: 626.38s
+[train-6] step: [1600 / 3395] | exs = 594467 | loss = 3.7317 | f1 = 41.86 | em = 28.12
+used_time: 833.93s
+[train-6] step: [2000 / 3395] | exs = 607267 | loss = 3.6568 | f1 = 49.64 | em = 40.62
+used_time: 1040.59s
+[train-6] step: [2400 / 3395] | exs = 620067 | loss = 4.4364 | f1 = 48.00 | em = 37.50
+used_time: 1249.79s
+[train-6] step: [2800 / 3395] | exs = 632867 | loss = 4.5296 | f1 = 54.07 | em = 40.62
+used_time: 1458.12s
+[train-6] step: [3200 / 3395] | exs = 645667 | loss = 4.0574 | f1 = 39.06 | em = 31.25
+used_time: 1664.03s
+<> <> Timer [Train] <> <> Interval [Training Epoch 6]: 0h 29m 25s <> <>
+Training Epoch 6 -- Loss: 4.2513, F1: 50.70, EM: 38.65 --
+
+>>> Dev Epoch: [6 / 50]
+[predict-6] step: [0 / 249] | f1 = 57.48 | em = 48.44
+used_time: 0.36s
+<> <> Timer [Train] <> <> Interval [Validation Epoch 6]: 0h 01m 35s <> <>
+Validation Epoch 6 -- F1: 66.61, EM: 56.66 --
+!!! Updated: F1: 66.61, EM: 56.66
+
+>>> Train Epoch: [7 / 50]
+[train-7] step: [0 / 3395] | exs = 651914 | loss = 3.0458 | f1 = 56.78 | em = 46.88
+used_time: 0.52s
+[train-7] step: [400 / 3395] | exs = 664714 | loss = 3.3158 | f1 = 60.82 | em = 46.88
+used_time: 209.86s
+[train-7] step: [800 / 3395] | exs = 677514 | loss = 3.9655 | f1 = 49.13 | em = 34.38
+used_time: 416.53s
+[train-7] step: [1200 / 3395] | exs = 690314 | loss = 2.5514 | f1 = 54.58 | em = 43.75
+used_time: 623.93s
+[train-7] step: [1600 / 3395] | exs = 703114 | loss = 4.8164 | f1 = 47.31 | em = 40.62
+used_time: 828.36s
+[train-7] step: [2000 / 3395] | exs = 715914 | loss = 3.6222 | f1 = 61.15 | em = 43.75
+used_time: 1033.36s
+[train-7] step: [2400 / 3395] | exs = 728714 | loss = 3.4348 | f1 = 71.03 | em = 56.25
+used_time: 1239.71s
+[train-7] step: [2800 / 3395] | exs = 741514 | loss = 4.0032 | f1 = 54.96 | em = 40.62
+used_time: 1446.88s
+[train-7] step: [3200 / 3395] | exs = 754314 | loss = 4.4859 | f1 = 51.36 | em = 34.38
+used_time: 1653.94s
+<> <> Timer [Train] <> <> Interval [Training Epoch 7]: 0h 29m 16s <> <>
+Training Epoch 7 -- Loss: 4.1403, F1: 51.90, EM: 39.80 --
+
+>>> Dev Epoch: [7 / 50]
+[predict-7] step: [0 / 249] | f1 = 57.60 | em = 50.00
+used_time: 0.36s
+<> <> Timer [Train] <> <> Interval [Validation Epoch 7]: 0h 01m 35s <> <>
+Validation Epoch 7 -- F1: 67.33, EM: 57.65 --
+!!! Updated: F1: 67.33, EM: 57.65
+
+>>> Train Epoch: [8 / 50]
+[train-8] step: [0 / 3395] | exs = 760561 | loss = 4.6245 | f1 = 52.23 | em = 43.75
+used_time: 0.60s
+[train-8] step: [400 / 3395] | exs = 773361 | loss = 4.3671 | f1 = 57.71 | em = 46.88
+used_time: 209.00s
+[train-8] step: [800 / 3395] | exs = 786161 | loss = 4.4086 | f1 = 55.36 | em = 46.88
+used_time: 416.37s
+[train-8] step: [1200 / 3395] | exs = 798961 | loss = 3.9939 | f1 = 54.55 | em = 43.75
+used_time: 621.96s
+[train-8] step: [1600 / 3395] | exs = 811761 | loss = 3.7573 | f1 = 52.32 | em = 40.62
+used_time: 828.33s
+[train-8] step: [2000 / 3395] | exs = 824561 | loss = 2.8487 | f1 = 62.40 | em = 46.88
+used_time: 1035.13s
+[train-8] step: [2400 / 3395] | exs = 837361 | loss = 4.0969 | f1 = 52.63 | em = 37.50
+used_time: 1239.83s
+[train-8] step: [2800 / 3395] | exs = 850161 | loss = 4.3171 | f1 = 39.36 | em = 31.25
+used_time: 1444.41s
+[train-8] step: [3200 / 3395] | exs = 862961 | loss = 4.0376 | f1 = 55.19 | em = 43.75
+used_time: 1649.96s
+<> <> Timer [Train] <> <> Interval [Training Epoch 8]: 0h 29m 12s <> <>
+Training Epoch 8 -- Loss: 4.0265, F1: 52.96, EM: 40.75 --
+
+>>> Dev Epoch: [8 / 50]
+[predict-8] step: [0 / 249] | f1 = 62.53 | em = 56.25
+used_time: 0.36s
+<> <> Timer [Train] <> <> Interval [Validation Epoch 8]: 0h 01m 35s <> <>
+Validation Epoch 8 -- F1: 67.40, EM: 57.44 --
+!!! Updated: F1: 67.40, EM: 57.44
+
+>>> Train Epoch: [9 / 50]
+[train-9] step: [0 / 3395] | exs = 869208 | loss = 3.2879 | f1 = 57.85 | em = 50.00
+used_time: 0.48s
+[train-9] step: [400 / 3395] | exs = 882008 | loss = 4.6996 | f1 = 46.52 | em = 28.12
+used_time: 207.03s
+[train-9] step: [800 / 3395] | exs = 894808 | loss = 4.5891 | f1 = 37.46 | em = 28.12
+used_time: 412.33s
+[train-9] step: [1200 / 3395] | exs = 907608 | loss = 3.4274 | f1 = 52.09 | em = 34.38
+used_time: 620.83s
+[train-9] step: [1600 / 3395] | exs = 920408 | loss = 4.3525 | f1 = 47.28 | em = 43.75
+used_time: 826.90s
+[train-9] step: [2000 / 3395] | exs = 933208 | loss = 3.9906 | f1 = 54.56 | em = 43.75
+used_time: 1033.29s
+[train-9] step: [2400 / 3395] | exs = 946008 | loss = 4.9294 | f1 = 48.43 | em = 34.38
+used_time: 1240.09s
+[train-9] step: [2800 / 3395] | exs = 958808 | loss = 1.9716 | f1 = 71.20 | em = 59.38
+used_time: 1449.70s
+[train-9] step: [3200 / 3395] | exs = 971608 | loss = 4.2113 | f1 = 47.11 | em = 31.25
+used_time: 1656.90s
+<> <> Timer [Train] <> <> Interval [Training Epoch 9]: 0h 29m 16s <> <>
+Training Epoch 9 -- Loss: 3.9345, F1: 53.92, EM: 41.55 --
+
+>>> Dev Epoch: [9 / 50]
+[predict-9] step: [0 / 249] | f1 = 64.02 | em = 59.38
+used_time: 0.35s
+<> <> Timer [Train] <> <> Interval [Validation Epoch 9]: 0h 01m 36s <> <>
+Validation Epoch 9 -- F1: 68.60, EM: 59.26 --
+!!! Updated: F1: 68.60, EM: 59.26
+
+>>> Train Epoch: [10 / 50]
+[train-10] step: [0 / 3395] | exs = 977855 | loss = 3.8194 | f1 = 62.92 | em = 50.00
+used_time: 0.75s
+[train-10] step: [400 / 3395] | exs = 990655 | loss = 4.5468 | f1 = 45.28 | em = 28.12
+used_time: 206.78s
+[train-10] step: [800 / 3395] | exs = 1003455 | loss = 3.2697 | f1 = 65.37 | em = 56.25
+used_time: 415.93s
+[train-10] step: [1200 / 3395] | exs = 1016255 | loss = 3.9098 | f1 = 49.01 | em = 37.50
+used_time: 621.31s
+[train-10] step: [1600 / 3395] | exs = 1029055 | loss = 4.2208 | f1 = 51.30 | em = 43.75
+used_time: 828.51s
+[train-10] step: [2000 / 3395] | exs = 1041855 | loss = 3.9838 | f1 = 46.91 | em = 37.50
+used_time: 1036.04s
+[train-10] step: [2400 / 3395] | exs = 1054655 | loss = 4.1737 | f1 = 46.21 | em = 37.50
+used_time: 1243.48s
+[train-10] step: [2800 / 3395] | exs = 1067455 | loss = 3.6257 | f1 = 48.28 | em = 34.38
+used_time: 1448.52s
+[train-10] step: [3200 / 3395] | exs = 1080255 | loss = 3.0548 | f1 = 59.98 | em = 50.00
+used_time: 1654.69s
+<> <> Timer [Train] <> <> Interval [Training Epoch 10]: 0h 29m 16s <> <>
+Training Epoch 10 -- Loss: 3.8615, F1: 54.78, EM: 42.47 --
+
+>>> Dev Epoch: [10 / 50]
+[predict-10] step: [0 / 249] | f1 = 64.73 | em = 58.59
+used_time: 0.35s
+<> <> Timer [Train] <> <> Interval [Validation Epoch 10]: 0h 01m 35s <> <>
+Validation Epoch 10 -- F1: 67.91, EM: 58.79 --
+
+>>> Train Epoch: [11 / 50]
+[train-11] step: [0 / 3395] | exs = 1086502 | loss = 3.5809 | f1 = 72.85 | em = 59.38
+used_time: 0.52s
+[train-11] step: [400 / 3395] | exs = 1099302 | loss = 3.7415 | f1 = 55.43 | em = 43.75
+used_time: 207.25s
+[train-11] step: [800 / 3395] | exs = 1112102 | loss = 3.7678 | f1 = 55.58 | em = 37.50
+used_time: 415.40s
+[train-11] step: [1200 / 3395] | exs = 1124902 | loss = 3.6376 | f1 = 51.11 | em = 43.75
+used_time: 618.94s
+[train-11] step: [1600 / 3395] | exs = 1137702 | loss = 5.8410 | f1 = 44.09 | em = 34.38
+used_time: 825.18s
+[train-11] step: [2000 / 3395] | exs = 1150502 | loss = 4.0808 | f1 = 52.03 | em = 37.50
+used_time: 1031.20s
+[train-11] step: [2400 / 3395] | exs = 1163302 | loss = 3.1770 | f1 = 55.99 | em = 50.00
+used_time: 1238.83s
+[train-11] step: [2800 / 3395] | exs = 1176102 | loss = 4.4435 | f1 = 48.10 | em = 43.75
+used_time: 1441.16s
+[train-11] step: [3200 / 3395] | exs = 1188902 | loss = 3.2040 | f1 = 69.27 | em = 62.50
+used_time: 1648.27s
+<> <> Timer [Train] <> <> Interval [Training Epoch 11]: 0h 29m 06s <> <>
+Training Epoch 11 -- Loss: 3.7728, F1: 55.53, EM: 43.09 --
+
+>>> Dev Epoch: [11 / 50]
+[predict-11] step: [0 / 249] | f1 = 64.73 | em = 58.59
+used_time: 0.36s
+<> <> Timer [Train] <> <> Interval [Validation Epoch 11]: 0h 01m 35s <> <>
+Validation Epoch 11 -- F1: 68.98, EM: 59.66 --
+!!! Updated: F1: 68.98, EM: 59.66
+
+>>> Train Epoch: [12 / 50]
+[train-12] step: [0 / 3395] | exs = 1195149 | loss = 4.0365 | f1 = 46.81 | em = 34.38
+used_time: 0.52s
+[train-12] step: [400 / 3395] | exs = 1207949 | loss = 4.3393 | f1 = 43.60 | em = 37.50
+used_time: 209.59s
+[train-12] step: [800 / 3395] | exs = 1220749 | loss = 4.7737 | f1 = 48.25 | em = 40.62
+used_time: 414.76s
+[train-12] step: [1200 / 3395] | exs = 1233549 | loss = 3.2340 | f1 = 61.94 | em = 50.00
+used_time: 621.87s
+[train-12] step: [1600 / 3395] | exs = 1246349 | loss = 3.5375 | f1 = 64.07 | em = 50.00
+used_time: 828.63s
+[train-12] step: [2000 / 3395] | exs = 1259149 | loss = 4.0925 | f1 = 56.16 | em = 40.62
+used_time: 1037.50s
+[train-12] step: [2400 / 3395] | exs = 1271949 | loss = 3.6989 | f1 = 53.85 | em = 40.62
+used_time: 1243.93s
+[train-12] step: [2800 / 3395] | exs = 1284749 | loss = 3.5269 | f1 = 55.69 | em = 50.00
+used_time: 1449.75s
+[train-12] step: [3200 / 3395] | exs = 1297549 | loss = 3.8735 | f1 = 56.53 | em = 46.88
+used_time: 1655.08s
+<> <> Timer [Train] <> <> Interval [Training Epoch 12]: 0h 29m 16s <> <>
+Training Epoch 12 -- Loss: 3.7182, F1: 56.11, EM: 43.62 --
+
+>>> Dev Epoch: [12 / 50]
+[predict-12] step: [0 / 249] | f1 = 61.36 | em = 53.12
+used_time: 0.36s
+<> <> Timer [Train] <> <> Interval [Validation Epoch 12]: 0h 01m 34s <> <>
+Validation Epoch 12 -- F1: 69.04, EM: 59.91 --
+!!! Updated: F1: 69.04, EM: 59.91
+
+>>> Train Epoch: [13 / 50]
+[train-13] step: [0 / 3395] | exs = 1303796 | loss = 3.8048 | f1 = 59.46 | em = 37.50
+used_time: 0.52s
+[train-13] step: [400 / 3395] | exs = 1316596 | loss = 3.9768 | f1 = 49.38 | em = 43.75
+used_time: 208.27s
+[train-13] step: [800 / 3395] | exs = 1329396 | loss = 3.1530 | f1 = 60.54 | em = 46.88
+used_time: 414.37s
+[train-13] step: [1200 / 3395] | exs = 1342196 | loss = 3.0785 | f1 = 57.01 | em = 43.75
+used_time: 620.75s
+[train-13] step: [1600 / 3395] | exs = 1354996 | loss = 3.4104 | f1 = 51.50 | em = 40.62
+used_time: 828.24s
+[train-13] step: [2000 / 3395] | exs = 1367796 | loss = 3.7724 | f1 = 51.85 | em = 37.50
+used_time: 1033.32s
+[train-13] step: [2400 / 3395] | exs = 1380596 | loss = 3.4485 | f1 = 61.59 | em = 53.12
+used_time: 1238.84s
+[train-13] step: [2800 / 3395] | exs = 1393396 | loss = 4.1558 | f1 = 54.57 | em = 40.62
+used_time: 1445.57s
+[train-13] step: [3200 / 3395] | exs = 1406196 | loss = 3.7585 | f1 = 60.99 | em = 53.12
+used_time: 1650.04s
+<> <> Timer [Train] <> <> Interval [Training Epoch 13]: 0h 29m 12s <> <>
+Training Epoch 13 -- Loss: 3.6525, F1: 56.89, EM: 44.48 --
+
+>>> Dev Epoch: [13 / 50]
+[predict-13] step: [0 / 249] | f1 = 65.93 | em = 59.38
+used_time: 0.36s
+<> <> Timer [Train] <> <> Interval [Validation Epoch 13]: 0h 01m 35s <> <>
+Validation Epoch 13 -- F1: 69.84, EM: 60.75 --
+!!! Updated: F1: 69.84, EM: 60.75
+
+>>> Train Epoch: [14 / 50]
+[train-14] step: [0 / 3395] | exs = 1412443 | loss = 3.4892 | f1 = 43.06 | em = 34.38
+used_time: 0.57s
+[train-14] step: [400 / 3395] | exs = 1425243 | loss = 2.5915 | f1 = 70.00 | em = 62.50
+used_time: 210.23s
+[train-14] step: [800 / 3395] | exs = 1438043 | loss = 2.8434 | f1 = 67.35 | em = 43.75
+used_time: 416.83s
+[train-14] step: [1200 / 3395] | exs = 1450843 | loss = 3.9650 | f1 = 56.44 | em = 43.75
+used_time: 622.14s
+[train-14] step: [1600 / 3395] | exs = 1463643 | loss = 3.9444 | f1 = 50.99 | em = 40.62
+used_time: 829.88s
+[train-14] step: [2000 / 3395] | exs = 1476443 | loss = 3.7026 | f1 = 63.51 | em = 50.00
+used_time: 1038.05s
+[train-14] step: [2400 / 3395] | exs = 1489243 | loss = 3.3902 | f1 = 61.16 | em = 53.12
+used_time: 1242.71s
+[train-14] step: [2800 / 3395] | exs = 1502043 | loss = 2.4251 | f1 = 60.22 | em = 53.12
+used_time: 1446.60s
+[train-14] step: [3200 / 3395] | exs = 1514843 | loss = 4.2765 | f1 = 53.41 | em = 37.50
+used_time: 1654.06s
+<> <> Timer [Train] <> <> Interval [Training Epoch 14]: 0h 29m 15s <> <>
+Training Epoch 14 -- Loss: 3.5877, F1: 57.55, EM: 44.91 --
+
+>>> Dev Epoch: [14 / 50]
+[predict-14] step: [0 / 249] | f1 = 58.77 | em = 49.22
+used_time: 0.36s
+<> <> Timer [Train] <> <> Interval [Validation Epoch 14]: 0h 01m 34s <> <>
+Validation Epoch 14 -- F1: 70.18, EM: 60.79 --
+!!! Updated: F1: 70.18, EM: 60.79
+
+>>> Train Epoch: [15 / 50]
+[train-15] step: [0 / 3395] | exs = 1521090 | loss = 3.1803 | f1 = 59.47 | em = 43.75
+used_time: 0.45s
+[train-15] step: [400 / 3395] | exs = 1533890 | loss = 4.3904 | f1 = 49.59 | em = 34.38
+used_time: 207.79s
+[train-15] step: [800 / 3395] | exs = 1546690 | loss = 3.5094 | f1 = 55.87 | em = 50.00
+used_time: 413.39s
+[train-15] step: [1200 / 3395] | exs = 1559490 | loss = 4.8364 | f1 = 48.87 | em = 40.62
+used_time: 617.06s
+[train-15] step: [1600 / 3395] | exs = 1572290 | loss = 3.4809 | f1 = 66.09 | em = 50.00
+used_time: 823.20s
+[train-15] step: [2000 / 3395] | exs = 1585090 | loss = 3.4415 | f1 = 58.92 | em = 50.00
+used_time: 1031.52s
+[train-15] step: [2400 / 3395] | exs = 1597890 | loss = 3.5001 | f1 = 63.99 | em = 59.38
+used_time: 1235.59s
+[train-15] step: [2800 / 3395] | exs = 1610690 | loss = 4.4322 | f1 = 48.50 | em = 34.38
+used_time: 1444.13s
+[train-15] step: [3200 / 3395] | exs = 1623490 | loss = 3.3834 | f1 = 63.21 | em = 50.00
+used_time: 1652.24s
+<> <> Timer [Train] <> <> Interval [Training Epoch 15]: 0h 29m 16s <> <>
+Training Epoch 15 -- Loss: 3.5353, F1: 58.11, EM: 45.54 --
+
+>>> Dev Epoch: [15 / 50]
+[predict-15] step: [0 / 249] | f1 = 74.14 | em = 64.84
+used_time: 0.35s
+<> <> Timer [Train] <> <> Interval [Validation Epoch 15]: 0h 01m 35s <> <>
+Validation Epoch 15 -- F1: 70.00, EM: 60.88 --
+
+>>> Train Epoch: [16 / 50]
+[train-16] step: [0 / 3395] | exs = 1629737 | loss = 4.0514 | f1 = 61.91 | em = 37.50
+used_time: 0.53s
+[train-16] step: [400 / 3395] | exs = 1642537 | loss = 4.1024 | f1 = 59.01 | em = 46.88
+used_time: 206.75s
+[train-16] step: [800 / 3395] | exs = 1655337 | loss = 3.3683 | f1 = 62.00 | em = 46.88
+used_time: 412.44s
+[train-16] step: [1200 / 3395] | exs = 1668137 | loss = 2.3305 | f1 = 62.22 | em = 43.75
+used_time: 619.80s
+[train-16] step: [1600 / 3395] | exs = 1680937 | loss = 4.4614 | f1 = 51.82 | em = 37.50
+used_time: 828.43s
+[train-16] step: [2000 / 3395] | exs = 1693737 | loss = 2.5437 | f1 = 63.03 | em = 53.12
+used_time: 1039.35s
+[train-16] step: [2400 / 3395] | exs = 1706537 | loss = 4.1592 | f1 = 47.85 | em = 37.50
+used_time: 1244.02s
+[train-16] step: [2800 / 3395] | exs = 1719337 | loss = 3.0861 | f1 = 58.74 | em = 43.75
+used_time: 1449.46s
+[train-16] step: [3200 / 3395] | exs = 1732137 | loss = 4.4157 | f1 = 36.66 | em = 25.00
+used_time: 1654.92s
+<> <> Timer [Train] <> <> Interval [Training Epoch 16]: 0h 29m 15s <> <>
+Training Epoch 16 -- Loss: 3.4726, F1: 58.68, EM: 46.13 --
+
+>>> Dev Epoch: [16 / 50]
+[predict-16] step: [0 / 249] | f1 = 62.19 | em = 53.12
+used_time: 0.36s
+<> <> Timer [Train] <> <> Interval [Validation Epoch 16]: 0h 01m 35s <> <>
+Validation Epoch 16 -- F1: 69.88, EM: 60.94 --
+
+>>> Train Epoch: [17 / 50]
+[train-17] step: [0 / 3395] | exs = 1738384 | loss = 2.7079 | f1 = 65.87 | em = 53.12
+used_time: 0.59s
+[train-17] step: [400 / 3395] | exs = 1751184 | loss = 4.4468 | f1 = 45.53 | em = 31.25
+used_time: 205.61s
+[train-17] step: [800 / 3395] | exs = 1763984 | loss = 3.0449 | f1 = 72.07 | em = 53.12
+used_time: 411.80s
+[train-17] step: [1200 / 3395] | exs = 1776784 | loss = 2.1797 | f1 = 57.08 | em = 50.00
+used_time: 618.60s
+[train-17] step: [1600 / 3395] | exs = 1789584 | loss = 4.3234 | f1 = 50.47 | em = 37.50
+used_time: 825.37s
+[train-17] step: [2000 / 3395] | exs = 1802384 | loss = 3.3663 | f1 = 64.61 | em = 46.88
+used_time: 1033.08s
+[train-17] step: [2400 / 3395] | exs = 1815184 | loss = 3.5892 | f1 = 66.55 | em = 50.00
+used_time: 1240.47s
+[train-17] step: [2800 / 3395] | exs = 1827984 | loss = 3.6222 | f1 = 45.89 | em = 37.50
+used_time: 1447.26s
+[train-17] step: [3200 / 3395] | exs = 1840784 | loss = 2.8320 | f1 = 52.55 | em = 43.75
+used_time: 1654.04s
+<> <> Timer [Train] <> <> Interval [Training Epoch 17]: 0h 29m 15s <> <>
+Training Epoch 17 -- Loss: 3.4274, F1: 59.17, EM: 46.59 --
+
+>>> Dev Epoch: [17 / 50]
+[predict-17] step: [0 / 249] | f1 = 63.15 | em = 53.12
+used_time: 0.37s
+<> <> Timer [Train] <> <> Interval [Validation Epoch 17]: 0h 01m 36s <> <>
+Validation Epoch 17 -- F1: 70.59, EM: 61.17 --
+!!! Updated: F1: 70.59, EM: 61.17
+
+>>> Train Epoch: [18 / 50]
+[train-18] step: [0 / 3395] | exs = 1847031 | loss = 2.4391 | f1 = 64.64 | em = 50.00
+used_time: 0.58s
+[train-18] step: [400 / 3395] | exs = 1859831 | loss = 2.9178 | f1 = 74.30 | em = 53.12
+used_time: 206.17s
+[train-18] step: [800 / 3395] | exs = 1872631 | loss = 3.5000 | f1 = 68.51 | em = 56.25
+used_time: 410.87s
+[train-18] step: [1200 / 3395] | exs = 1885431 | loss = 4.1234 | f1 = 51.57 | em = 34.38
+used_time: 619.48s
+[train-18] step: [1600 / 3395] | exs = 1898231 | loss = 2.6441 | f1 = 67.67 | em = 59.38
+used_time: 827.14s
+[train-18] step: [2000 / 3395] | exs = 1911031 | loss = 2.8814 | f1 = 59.28 | em = 46.88
+used_time: 1033.61s
+[train-18] step: [2400 / 3395] | exs = 1923831 | loss = 3.3897 | f1 = 58.96 | em = 50.00
+used_time: 1241.54s
+[train-18] step: [2800 / 3395] | exs = 1936631 | loss = 2.3765 | f1 = 55.98 | em = 40.62
+used_time: 1449.44s
+[train-18] step: [3200 / 3395] | exs = 1949431 | loss = 3.1340 | f1 = 59.29 | em = 50.00
+used_time: 1654.88s
+<> <> Timer [Train] <> <> Interval [Training Epoch 18]: 0h 29m 16s <> <>
+Training Epoch 18 -- Loss: 3.3680, F1: 59.68, EM: 47.03 --
+
+>>> Dev Epoch: [18 / 50]
+[predict-18] step: [0 / 249] | f1 = 69.33 | em = 61.72
+used_time: 0.36s
+<> <> Timer [Train] <> <> Interval [Validation Epoch 18]: 0h 01m 35s <> <>
+Validation Epoch 18 -- F1: 70.56, EM: 61.44 --
+
+>>> Train Epoch: [19 / 50]
+[train-19] step: [0 / 3395] | exs = 1955678 | loss = 4.4339 | f1 = 47.90 | em = 28.12
+used_time: 0.49s
+[train-19] step: [400 / 3395] | exs = 1968478 | loss = 2.0745 | f1 = 61.51 | em = 53.12
+used_time: 205.78s
+[train-19] step: [800 / 3395] | exs = 1981278 | loss = 3.4940 | f1 = 60.51 | em = 46.88
+used_time: 415.53s
+[train-19] step: [1200 / 3395] | exs = 1994078 | loss = 3.4487 | f1 = 61.28 | em = 56.25
+used_time: 619.57s
+[train-19] step: [1600 / 3395] | exs = 2006878 | loss = 4.4633 | f1 = 42.09 | em = 34.38
+used_time: 824.48s
+[train-19] step: [2000 / 3395] | exs = 2019678 | loss = 4.1590 | f1 = 46.22 | em = 28.12
+used_time: 1030.18s
+[train-19] step: [2400 / 3395] | exs = 2032478 | loss = 3.6209 | f1 = 48.51 | em = 34.38
+used_time: 1231.82s
+[train-19] step: [2800 / 3395] | exs = 2045278 | loss = 2.9517 | f1 = 58.13 | em = 50.00
+used_time: 1435.34s
+[train-19] step: [3200 / 3395] | exs = 2058078 | loss = 4.3057 | f1 = 36.74 | em = 18.75
+used_time: 1643.47s
+<> <> Timer [Train] <> <> Interval [Training Epoch 19]: 0h 29m 02s <> <>
+Training Epoch 19 -- Loss: 3.3278, F1: 60.26, EM: 47.57 --
+
+>>> Dev Epoch: [19 / 50]
+[predict-19] step: [0 / 249] | f1 = 63.77 | em = 55.47
+used_time: 0.35s
+<> <> Timer [Train] <> <> Interval [Validation Epoch 19]: 0h 01m 32s <> <>
+Validation Epoch 19 -- F1: 70.35, EM: 61.35 --
+
+>>> Train Epoch: [20 / 50]
+[train-20] step: [0 / 3395] | exs = 2064325 | loss = 3.2809 | f1 = 60.25 | em = 40.62
+used_time: 0.42s
+[train-20] step: [400 / 3395] | exs = 2077125 | loss = 3.7578 | f1 = 59.27 | em = 53.12
+used_time: 205.21s
+[train-20] step: [800 / 3395] | exs = 2089925 | loss = 3.7556 | f1 = 50.21 | em = 28.12
+used_time: 408.72s
+[train-20] step: [1200 / 3395] | exs = 2102725 | loss = 2.0055 | f1 = 80.09 | em = 65.62
+used_time: 613.24s
+[train-20] step: [1600 / 3395] | exs = 2115525 | loss = 3.4954 | f1 = 68.08 | em = 59.38
+used_time: 817.18s
+[train-20] step: [2000 / 3395] | exs = 2128325 | loss = 3.9457 | f1 = 57.47 | em = 40.62
+used_time: 1019.52s
+[train-20] step: [2400 / 3395] | exs = 2141125 | loss = 3.0254 | f1 = 72.75 | em = 62.50
+used_time: 1224.69s
+[train-20] step: [2800 / 3395] | exs = 2153925 | loss = 2.7678 | f1 = 70.40 | em = 65.62
+used_time: 1430.25s
+[train-20] step: [3200 / 3395] | exs = 2166725 | loss = 3.0002 | f1 = 51.35 | em = 43.75
+used_time: 1635.40s
+<> <> Timer [Train] <> <> Interval [Training Epoch 20]: 0h 28m 56s <> <>
+Training Epoch 20 -- Loss: 3.2738, F1: 60.54, EM: 47.85 --
+
+>>> Dev Epoch: [20 / 50]
+[predict-20] step: [0 / 249] | f1 = 77.44 | em = 71.09
+used_time: 0.35s
+<> <> Timer [Train] <> <> Interval [Validation Epoch 20]: 0h 01m 34s <> <>
+Validation Epoch 20 -- F1: 71.11, EM: 61.90 --
+!!! Updated: F1: 71.11, EM: 61.90
+
+>>> Train Epoch: [21 / 50]
+[train-21] step: [0 / 3395] | exs = 2172972 | loss = 2.4367 | f1 = 78.69 | em = 68.75
+used_time: 0.54s
+[train-21] step: [400 / 3395] | exs = 2185772 | loss = 3.1027 | f1 = 52.02 | em = 40.62
+used_time: 204.79s
+[train-21] step: [800 / 3395] | exs = 2198572 | loss = 3.4346 | f1 = 55.63 | em = 40.62
+used_time: 407.60s
+[train-21] step: [1200 / 3395] | exs = 2211372 | loss = 3.3175 | f1 = 67.14 | em = 56.25
+used_time: 610.33s
+[train-21] step: [1600 / 3395] | exs = 2224172 | loss = 4.3047 | f1 = 51.65 | em = 34.38
+used_time: 813.75s
+[train-21] step: [2000 / 3395] | exs = 2236972 | loss = 2.7013 | f1 = 65.66 | em = 53.12
+used_time: 1016.05s
+[train-21] step: [2400 / 3395] | exs = 2249772 | loss = 3.1379 | f1 = 61.88 | em = 56.25
+used_time: 1223.14s
+[train-21] step: [2800 / 3395] | exs = 2262572 | loss = 2.4702 | f1 = 58.98 | em = 43.75
+used_time: 1426.99s
+[train-21] step: [3200 / 3395] | exs = 2275372 | loss = 3.6312 | f1 = 55.86 | em = 46.88
+used_time: 1632.98s
+<> <> Timer [Train] <> <> Interval [Training Epoch 21]: 0h 28m 54s <> <>
+Training Epoch 21 -- Loss: 3.2385, F1: 60.91, EM: 48.13 --
+
+>>> Dev Epoch: [21 / 50]
+[predict-21] step: [0 / 249] | f1 = 73.69 | em = 62.50
+used_time: 0.35s
+<> <> Timer [Train] <> <> Interval [Validation Epoch 21]: 0h 01m 33s <> <>
+Validation Epoch 21 -- F1: 70.78, EM: 61.72 --
+
+>>> Train Epoch: [22 / 50]
+[train-22] step: [0 / 3395] | exs = 2281619 | loss = 3.5994 | f1 = 54.90 | em = 43.75
+used_time: 0.50s
+[train-22] step: [400 / 3395] | exs = 2294419 | loss = 2.7033 | f1 = 64.49 | em = 59.38
+used_time: 208.66s
+[train-22] step: [800 / 3395] | exs = 2307219 | loss = 2.9410 | f1 = 63.24 | em = 56.25
+used_time: 411.99s
+[train-22] step: [1200 / 3395] | exs = 2320019 | loss = 2.3334 | f1 = 68.50 | em = 59.38
+used_time: 614.32s
+[train-22] step: [1600 / 3395] | exs = 2332819 | loss = 3.8907 | f1 = 48.59 | em = 31.25
+used_time: 821.44s
+[train-22] step: [2000 / 3395] | exs = 2345619 | loss = 3.6012 | f1 = 67.94 | em = 56.25
+used_time: 1025.54s
+[train-22] step: [2400 / 3395] | exs = 2358419 | loss = 2.6962 | f1 = 58.87 | em = 46.88
+used_time: 1229.95s
+[train-22] step: [2800 / 3395] | exs = 2371219 | loss = 3.9439 | f1 = 58.74 | em = 46.88
+used_time: 1435.57s
+[train-22] step: [3200 / 3395] | exs = 2384019 | loss = 2.8142 | f1 = 58.33 | em = 56.25
+used_time: 1641.11s
+<> <> Timer [Train] <> <> Interval [Training Epoch 22]: 0h 29m 00s <> <>
+Training Epoch 22 -- Loss: 3.1826, F1: 61.54, EM: 48.88 --
+
+>>> Dev Epoch: [22 / 50]
+[predict-22] step: [0 / 249] | f1 = 76.06 | em = 67.97
+used_time: 0.34s
+<> <> Timer [Train] <> <> Interval [Validation Epoch 22]: 0h 01m 32s <> <>
+Validation Epoch 22 -- F1: 70.56, EM: 61.73 --
+
+>>> Train Epoch: [23 / 50]
+[train-23] step: [0 / 3395] | exs = 2390266 | loss = 2.7652 | f1 = 62.13 | em = 56.25
+used_time: 0.50s
+[train-23] step: [400 / 3395] | exs = 2403066 | loss = 2.8263 | f1 = 66.74 | em = 59.38
+used_time: 203.62s
+[train-23] step: [800 / 3395] | exs = 2415866 | loss = 3.8175 | f1 = 61.07 | em = 34.38
+used_time: 407.94s
+[train-23] step: [1200 / 3395] | exs = 2428666 | loss = 3.3134 | f1 = 68.02 | em = 43.75
+used_time: 611.53s
+[train-23] step: [1600 / 3395] | exs = 2441466 | loss = 3.1727 | f1 = 69.64 | em = 65.62
+used_time: 815.08s
+[train-23] step: [2000 / 3395] | exs = 2454266 | loss = 2.8015 | f1 = 59.24 | em = 43.75
+used_time: 1023.40s
+[train-23] step: [2400 / 3395] | exs = 2467066 | loss = 3.9142 | f1 = 54.21 | em = 40.62
+used_time: 1227.20s
+[train-23] step: [2800 / 3395] | exs = 2479866 | loss = 2.5749 | f1 = 70.24 | em = 59.38
+used_time: 1431.12s
+[train-23] step: [3200 / 3395] | exs = 2492666 | loss = 3.1858 | f1 = 49.43 | em = 40.62
+used_time: 1635.02s
+<> <> Timer [Train] <> <> Interval [Training Epoch 23]: 0h 28m 54s <> <>
+Training Epoch 23 -- Loss: 3.1429, F1: 61.96, EM: 49.26 --
+
+>>> Dev Epoch: [23 / 50]
+[predict-23] step: [0 / 249] | f1 = 68.60 | em = 58.59
+used_time: 0.35s
+<> <> Timer [Train] <> <> Interval [Validation Epoch 23]: 0h 01m 33s <> <>
+Validation Epoch 23 -- F1: 71.09, EM: 62.07 --
+
+>>> Train Epoch: [24 / 50]
+[train-24] step: [0 / 3395] | exs = 2498913 | loss = 3.7322 | f1 = 57.13 | em = 46.88
+used_time: 0.49s
+[train-24] step: [400 / 3395] | exs = 2511713 | loss = 3.6367 | f1 = 53.28 | em = 46.88
+used_time: 205.16s
+[train-24] step: [800 / 3395] | exs = 2524513 | loss = 3.0009 | f1 = 65.93 | em = 53.12
+used_time: 409.17s
+[train-24] step: [1200 / 3395] | exs = 2537313 | loss = 3.1238 | f1 = 71.58 | em = 62.50
+used_time: 614.61s
+[train-24] step: [1600 / 3395] | exs = 2550113 | loss = 2.8800 | f1 = 57.79 | em = 46.88
+used_time: 819.79s
+[train-24] step: [2000 / 3395] | exs = 2562913 | loss = 2.7602 | f1 = 68.34 | em = 59.38
+used_time: 1024.77s
+[train-24] step: [2400 / 3395] | exs = 2575713 | loss = 3.3736 | f1 = 65.48 | em = 40.62
+used_time: 1229.05s
+[train-24] step: [2800 / 3395] | exs = 2588513 | loss = 3.0438 | f1 = 68.57 | em = 53.12
+used_time: 1431.04s
+[train-24] step: [3200 / 3395] | exs = 2601313 | loss = 2.7041 | f1 = 55.42 | em = 50.00
+used_time: 1634.71s
+<> <> Timer [Train] <> <> Interval [Training Epoch 24]: 0h 28m 53s <> <>
+Training Epoch 24 -- Loss: 3.1016, F1: 62.32, EM: 49.54 --
+
+>>> Dev Epoch: [24 / 50]
+[predict-24] step: [0 / 249] | f1 = 67.81 | em = 59.38
+used_time: 0.35s
+<> <> Timer [Train] <> <> Interval [Validation Epoch 24]: 0h 01m 33s <> <>
+Validation Epoch 24 -- F1: 71.29, EM: 62.07 --
+!!! Updated: F1: 71.29, EM: 62.07
+
+>>> Train Epoch: [25 / 50]
+[train-25] step: [0 / 3395] | exs = 2607560 | loss = 2.7013 | f1 = 60.49 | em = 53.12
+used_time: 0.73s
+[train-25] step: [400 / 3395] | exs = 2620360 | loss = 2.6135 | f1 = 50.38 | em = 43.75
+used_time: 206.58s
+[train-25] step: [800 / 3395] | exs = 2633160 | loss = 2.5122 | f1 = 63.97 | em = 53.12
+used_time: 409.81s
+[train-25] step: [1200 / 3395] | exs = 2645960 | loss = 1.4304 | f1 = 71.72 | em = 56.25
+used_time: 615.18s
+[train-25] step: [1600 / 3395] | exs = 2658760 | loss = 2.3845 | f1 = 73.70 | em = 59.38
+used_time: 819.06s
+[train-25] step: [2000 / 3395] | exs = 2671560 | loss = 2.8946 | f1 = 62.30 | em = 46.88
+used_time: 1025.81s
+[train-25] step: [2400 / 3395] | exs = 2684360 | loss = 3.1993 | f1 = 54.56 | em = 40.62
+used_time: 1231.87s
+[train-25] step: [2800 / 3395] | exs = 2697160 | loss = 3.2301 | f1 = 68.38 | em = 62.50
+used_time: 1433.79s
+[train-25] step: [3200 / 3395] | exs = 2709960 | loss = 2.7886 | f1 = 61.01 | em = 53.12
+used_time: 1636.74s
+<> <> Timer [Train] <> <> Interval [Training Epoch 25]: 0h 29m 01s <> <>
+Training Epoch 25 -- Loss: 3.0689, F1: 62.58, EM: 49.83 --
+
+>>> Dev Epoch: [25 / 50]
+[predict-25] step: [0 / 249] | f1 = 70.15 | em = 61.72
+used_time: 0.33s
+<> <> Timer [Train] <> <> Interval [Validation Epoch 25]: 0h 01m 38s <> <>
+Validation Epoch 25 -- F1: 71.11, EM: 61.95 --
+
+>>> Train Epoch: [26 / 50]
+[train-26] step: [0 / 3395] | exs = 2716207 | loss = 3.9827 | f1 = 45.06 | em = 34.38
+used_time: 0.50s
+[train-26] step: [400 / 3395] | exs = 2729007 | loss = 3.3498 | f1 = 63.67 | em = 50.00
+used_time: 207.66s
+[train-26] step: [800 / 3395] | exs = 2741807 | loss = 2.6233 | f1 = 65.90 | em = 53.12
+used_time: 412.63s
+[train-26] step: [1200 / 3395] | exs = 2754607 | loss = 2.8714 | f1 = 62.49 | em = 43.75
+used_time: 616.38s
+[train-26] step: [1600 / 3395] | exs = 2767407 | loss = 2.9220 | f1 = 70.46 | em = 59.38
+used_time: 820.27s
+[train-26] step: [2000 / 3395] | exs = 2780207 | loss = 2.8667 | f1 = 54.39 | em = 43.75
+used_time: 1027.70s
+[train-26] step: [2400 / 3395] | exs = 2793007 | loss = 3.1296 | f1 = 64.68 | em = 50.00
+used_time: 1231.07s
+[train-26] step: [2800 / 3395] | exs = 2805807 | loss = 3.0897 | f1 = 59.06 | em = 46.88
+used_time: 1435.57s
+[train-26] step: [3200 / 3395] | exs = 2818607 | loss = 2.1730 | f1 = 67.06 | em = 59.38
+used_time: 1641.10s
+<> <> Timer [Train] <> <> Interval [Training Epoch 26]: 0h 28m 58s <> <>
+Training Epoch 26 -- Loss: 3.0234, F1: 62.93, EM: 50.16 --
+
+>>> Dev Epoch: [26 / 50]
+[predict-26] step: [0 / 249] | f1 = 70.62 | em = 62.50
+used_time: 0.34s
+<> <> Timer [Train] <> <> Interval [Validation Epoch 26]: 0h 01m 34s <> <>
+Validation Epoch 26 -- F1: 71.27, EM: 62.14 --
+
+>>> Train Epoch: [27 / 50]
+[train-27] step: [0 / 3395] | exs = 2824854 | loss = 2.1520 | f1 = 76.65 | em = 56.25
+used_time: 0.52s
+[train-27] step: [400 / 3395] | exs = 2837654 | loss = 1.8657 | f1 = 71.51 | em = 62.50
+used_time: 204.73s
+[train-27] step: [800 / 3395] | exs = 2850454 | loss = 3.3565 | f1 = 52.37 | em = 28.12
+used_time: 407.65s
+[train-27] step: [1200 / 3395] | exs = 2863254 | loss = 3.6938 | f1 = 51.52 | em = 37.50
+used_time: 613.03s
+[train-27] step: [1600 / 3395] | exs = 2876054 | loss = 2.5482 | f1 = 57.70 | em = 46.88
+used_time: 817.87s
+[train-27] step: [2000 / 3395] | exs = 2888854 | loss = 1.8458 | f1 = 73.91 | em = 65.62
+used_time: 1021.54s
+[train-27] step: [2400 / 3395] | exs = 2901654 | loss = 3.2810 | f1 = 59.88 | em = 43.75
+used_time: 1225.94s
+[train-27] step: [2800 / 3395] | exs = 2914454 | loss = 3.2273 | f1 = 63.28 | em = 50.00
+used_time: 1432.50s
+[train-27] step: [3200 / 3395] | exs = 2927254 | loss = 2.3208 | f1 = 57.50 | em = 53.12
+used_time: 1633.89s
+<> <> Timer [Train] <> <> Interval [Training Epoch 27]: 0h 28m 52s <> <>
+Training Epoch 27 -- Loss: 2.9874, F1: 63.26, EM: 50.51 --
+
+>>> Dev Epoch: [27 / 50]
+[predict-27] step: [0 / 249] | f1 = 67.57 | em = 58.59
+used_time: 0.36s
+<> <> Timer [Train] <> <> Interval [Validation Epoch 27]: 0h 01m 33s <> <>
+Validation Epoch 27 -- F1: 71.05, EM: 61.82 --
+
+>>> Train Epoch: [28 / 50]
+[train-28] step: [0 / 3395] | exs = 2933501 | loss = 2.4633 | f1 = 67.28 | em = 50.00
+used_time: 0.49s
+[train-28] step: [400 / 3395] | exs = 2946301 | loss = 2.2895 | f1 = 74.00 | em = 53.12
+used_time: 205.11s
+[train-28] step: [800 / 3395] | exs = 2959101 | loss = 2.8777 | f1 = 62.40 | em = 46.88
+used_time: 409.53s
+[train-28] step: [1200 / 3395] | exs = 2971901 | loss = 3.5732 | f1 = 57.14 | em = 37.50
+used_time: 612.67s
+[train-28] step: [1600 / 3395] | exs = 2984701 | loss = 3.0319 | f1 = 68.23 | em = 53.12
+used_time: 815.76s
+[train-28] step: [2000 / 3395] | exs = 2997501 | loss = 3.1992 | f1 = 65.72 | em = 50.00
+used_time: 1024.86s
+[train-28] step: [2400 / 3395] | exs = 3010301 | loss = 3.0695 | f1 = 57.29 | em = 53.12
+used_time: 1227.68s
+[train-28] step: [2800 / 3395] | exs = 3023101 | loss = 2.3166 | f1 = 63.21 | em = 56.25
+used_time: 1429.92s
+[train-28] step: [3200 / 3395] | exs = 3035901 | loss = 2.9271 | f1 = 55.05 | em = 43.75
+used_time: 1636.22s
+<> <> Timer [Train] <> <> Interval [Training Epoch 28]: 0h 28m 55s <> <>
+Training Epoch 28 -- Loss: 2.9419, F1: 63.88, EM: 50.94 --
+
+>>> Dev Epoch: [28 / 50]
+[predict-28] step: [0 / 249] | f1 = 66.68 | em = 58.59
+used_time: 0.35s
+<> <> Timer [Train] <> <> Interval [Validation Epoch 28]: 0h 01m 33s <> <>
+Validation Epoch 28 -- F1: 71.23, EM: 62.17 --
+
+>>> Train Epoch: [29 / 50]
+[train-29] step: [0 / 3395] | exs = 3042148 | loss = 3.1790 | f1 = 65.74 | em = 53.12
+used_time: 0.52s
+[train-29] step: [400 / 3395] | exs = 3054948 | loss = 3.0441 | f1 = 67.60 | em = 59.38
+used_time: 205.10s
+[train-29] step: [800 / 3395] | exs = 3067748 | loss = 3.1411 | f1 = 51.94 | em = 43.75
+used_time: 411.09s
+[train-29] step: [1200 / 3395] | exs = 3080548 | loss = 2.8991 | f1 = 54.66 | em = 43.75
+used_time: 612.58s
+[train-29] step: [1600 / 3395] | exs = 3093348 | loss = 3.6720 | f1 = 57.54 | em = 43.75
+used_time: 814.62s
+[train-29] step: [2000 / 3395] | exs = 3106148 | loss = 3.3450 | f1 = 61.52 | em = 50.00
+used_time: 1022.04s
+[train-29] step: [2400 / 3395] | exs = 3118948 | loss = 3.1311 | f1 = 58.50 | em = 50.00
+used_time: 1225.26s
+[train-29] step: [2800 / 3395] | exs = 3131748 | loss = 3.6217 | f1 = 51.27 | em = 37.50
+used_time: 1433.42s
+[train-29] step: [3200 / 3395] | exs = 3144548 | loss = 3.0771 | f1 = 65.76 | em = 50.00
+used_time: 1636.84s
+<> <> Timer [Train] <> <> Interval [Training Epoch 29]: 0h 28m 56s <> <>
+Training Epoch 29 -- Loss: 2.9115, F1: 64.22, EM: 51.30 --
+
+>>> Dev Epoch: [29 / 50]
+[predict-29] step: [0 / 249] | f1 = 71.26 | em = 58.59
+used_time: 0.34s
+<> <> Timer [Train] <> <> Interval [Validation Epoch 29]: 0h 01m 32s <> <>
+Validation Epoch 29 -- F1: 70.83, EM: 61.52 --
+
+>>> Train Epoch: [30 / 50]
+[train-30] step: [0 / 3395] | exs = 3150795 | loss = 2.6243 | f1 = 62.73 | em = 53.12
+used_time: 0.54s
+[train-30] step: [400 / 3395] | exs = 3163595 | loss = 2.7599 | f1 = 63.19 | em = 56.25
+used_time: 201.85s
+[train-30] step: [800 / 3395] | exs = 3176395 | loss = 3.5995 | f1 = 62.40 | em = 50.00
+used_time: 406.07s
+[train-30] step: [1200 / 3395] | exs = 3189195 | loss = 2.9112 | f1 = 66.00 | em = 53.12
+used_time: 612.16s
+[train-30] step: [1600 / 3395] | exs = 3201995 | loss = 2.7929 | f1 = 55.62 | em = 43.75
+used_time: 814.33s
+[train-30] step: [2000 / 3395] | exs = 3214795 | loss = 2.5869 | f1 = 69.25 | em = 56.25
+used_time: 1019.57s
+[train-30] step: [2400 / 3395] | exs = 3227595 | loss = 3.3902 | f1 = 75.97 | em = 68.75
+used_time: 1223.71s
+[train-30] step: [2800 / 3395] | exs = 3240395 | loss = 3.1525 | f1 = 65.96 | em = 56.25
+used_time: 1426.91s
+[train-30] step: [3200 / 3395] | exs = 3253195 | loss = 4.1255 | f1 = 51.99 | em = 46.88
+used_time: 1634.55s
+<> <> Timer [Train] <> <> Interval [Training Epoch 30]: 0h 28m 52s <> <>
+Training Epoch 30 -- Loss: 2.8773, F1: 64.43, EM: 51.53 --
+
+>>> Dev Epoch: [30 / 50]
+[predict-30] step: [0 / 249] | f1 = 64.48 | em = 55.47
+used_time: 1.23s
+<> <> Timer [Train] <> <> Interval [Validation Epoch 30]: 0h 01m 34s <> <>
+Validation Epoch 30 -- F1: 71.07, EM: 61.72 --
+
+>>> Train Epoch: [31 / 50]
+[train-31] step: [0 / 3395] | exs = 3259442 | loss = 2.8885 | f1 = 66.32 | em = 53.12
+used_time: 0.50s
+[train-31] step: [400 / 3395] | exs = 3272242 | loss = 1.9785 | f1 = 75.00 | em = 65.62
+used_time: 201.49s
+[train-31] step: [800 / 3395] | exs = 3285042 | loss = 3.0095 | f1 = 69.91 | em = 50.00
+used_time: 407.42s
+[train-31] step: [1200 / 3395] | exs = 3297842 | loss = 2.6575 | f1 = 62.78 | em = 50.00
+used_time: 610.12s
+[train-31] step: [1600 / 3395] | exs = 3310642 | loss = 2.6283 | f1 = 65.00 | em = 53.12
+used_time: 814.03s
+[train-31] step: [2000 / 3395] | exs = 3323442 | loss = 2.6512 | f1 = 56.61 | em = 46.88
+used_time: 1018.61s
+[train-31] step: [2400 / 3395] | exs = 3336242 | loss = 3.5046 | f1 = 69.23 | em = 50.00
+used_time: 1223.83s
+[train-31] step: [2800 / 3395] | exs = 3349042 | loss = 2.9882 | f1 = 64.79 | em = 46.88
+used_time: 1428.51s
+[train-31] step: [3200 / 3395] | exs = 3361842 | loss = 2.8136 | f1 = 59.89 | em = 50.00
+used_time: 1632.91s
+<> <> Timer [Train] <> <> Interval [Training Epoch 31]: 0h 28m 51s <> <>
+Training Epoch 31 -- Loss: 2.8330, F1: 64.89, EM: 51.88 --
+
+>>> Dev Epoch: [31 / 50]
+[predict-31] step: [0 / 249] | f1 = 68.49 | em = 58.59
+used_time: 0.35s
+<> <> Timer [Train] <> <> Interval [Validation Epoch 31]: 0h 01m 33s <> <>
+Validation Epoch 31 -- F1: 70.87, EM: 61.39 --
+
+>>> Train Epoch: [32 / 50]
+[train-32] step: [0 / 3395] | exs = 3368089 | loss = 2.4854 | f1 = 62.29 | em = 50.00
+used_time: 0.50s
+[train-32] step: [400 / 3395] | exs = 3380889 | loss = 2.1078 | f1 = 63.59 | em = 56.25
+used_time: 204.26s
+[train-32] step: [800 / 3395] | exs = 3393689 | loss = 3.0002 | f1 = 56.64 | em = 43.75
+used_time: 408.91s
+[train-32] step: [1200 / 3395] | exs = 3406489 | loss = 2.9271 | f1 = 59.86 | em = 53.12
+used_time: 615.81s
+[train-32] step: [1600 / 3395] | exs = 3419289 | loss = 2.2107 | f1 = 68.79 | em = 53.12
+used_time: 816.59s
+[train-32] step: [2000 / 3395] | exs = 3432089 | loss = 2.7171 | f1 = 64.20 | em = 50.00
+used_time: 1020.15s
+[train-32] step: [2400 / 3395] | exs = 3444889 | loss = 2.9516 | f1 = 64.96 | em = 59.38
+used_time: 1226.20s
+[train-32] step: [2800 / 3395] | exs = 3457689 | loss = 2.5437 | f1 = 65.06 | em = 56.25
+used_time: 1429.01s
+[train-32] step: [3200 / 3395] | exs = 3470489 | loss = 2.2774 | f1 = 73.37 | em = 62.50
+used_time: 1637.17s
+<> <> Timer [Train] <> <> Interval [Training Epoch 32]: 0h 28m 57s <> <>
+Training Epoch 32 -- Loss: 2.8079, F1: 65.15, EM: 52.29 --
+
+>>> Dev Epoch: [32 / 50]
+[predict-32] step: [0 / 249] | f1 = 71.54 | em = 58.59
+used_time: 0.35s
+<> <> Timer [Train] <> <> Interval [Validation Epoch 32]: 0h 01m 33s <> <>
+Validation Epoch 32 -- F1: 70.75, EM: 61.56 --
+
+>>> Train Epoch: [33 / 50]
+[train-33] step: [0 / 3395] | exs = 3476736 | loss = 2.1759 | f1 = 67.08 | em = 62.50
+used_time: 0.48s
+[train-33] step: [400 / 3395] | exs = 3489536 | loss = 2.3276 | f1 = 67.60 | em = 59.38
+used_time: 205.74s
+[train-33] step: [800 / 3395] | exs = 3502336 | loss = 3.5281 | f1 = 62.02 | em = 46.88
+used_time: 411.92s
+[train-33] step: [1200 / 3395] | exs = 3515136 | loss = 1.7763 | f1 = 75.63 | em = 56.25
+used_time: 616.68s
+[train-33] step: [1600 / 3395] | exs = 3527936 | loss = 1.9995 | f1 = 78.65 | em = 71.88
+used_time: 819.56s
+[train-33] step: [2000 / 3395] | exs = 3540736 | loss = 3.3525 | f1 = 61.41 | em = 43.75
+used_time: 1021.85s
+[train-33] step: [2400 / 3395] | exs = 3553536 | loss = 2.6734 | f1 = 69.39 | em = 59.38
+used_time: 1227.45s
+[train-33] step: [2800 / 3395] | exs = 3566336 | loss = 2.7510 | f1 = 61.40 | em = 50.00
+used_time: 1432.34s
+[train-33] step: [3200 / 3395] | exs = 3579136 | loss = 2.6896 | f1 = 70.57 | em = 59.38
+used_time: 1639.75s
+<> <> Timer [Train] <> <> Interval [Training Epoch 33]: 0h 28m 57s <> <>
+Training Epoch 33 -- Loss: 2.7696, F1: 65.60, EM: 52.65 --
+
+>>> Dev Epoch: [33 / 50]
+[predict-33] step: [0 / 249] | f1 = 67.65 | em = 58.59
+used_time: 0.35s
+<> <> Timer [Train] <> <> Interval [Validation Epoch 33]: 0h 01m 33s <> <>
+Validation Epoch 33 -- F1: 70.38, EM: 61.33 --
+
+>>> Train Epoch: [34 / 50]
+[train-34] step: [0 / 3395] | exs = 3585383 | loss = 2.9634 | f1 = 57.36 | em = 34.38
+used_time: 0.62s
+[train-34] step: [400 / 3395] | exs = 3598183 | loss = 3.6560 | f1 = 58.67 | em = 46.88
+used_time: 203.48s
+[train-34] step: [800 / 3395] | exs = 3610983 | loss = 2.3269 | f1 = 67.27 | em = 59.38
+used_time: 407.22s
+[train-34] step: [1200 / 3395] | exs = 3623783 | loss = 3.2537 | f1 = 53.77 | em = 40.62
+used_time: 608.85s
+[train-34] step: [1600 / 3395] | exs = 3636583 | loss = 3.2325 | f1 = 55.14 | em = 43.75
+used_time: 813.74s
+[train-34] step: [2000 / 3395] | exs = 3649383 | loss = 2.7706 | f1 = 68.23 | em = 56.25
+used_time: 1018.10s
+[train-34] step: [2400 / 3395] | exs = 3662183 | loss = 2.5297 | f1 = 61.94 | em = 53.12
+used_time: 1222.24s
+[train-34] step: [2800 / 3395] | exs = 3674983 | loss = 2.0379 | f1 = 74.83 | em = 59.38
+used_time: 1429.28s
+[train-34] step: [3200 / 3395] | exs = 3687783 | loss = 3.2030 | f1 = 63.88 | em = 53.12
+used_time: 1634.43s
+<> <> Timer [Train] <> <> Interval [Training Epoch 34]: 0h 28m 53s <> <>
+Training Epoch 34 -- Loss: 2.7400, F1: 65.65, EM: 52.79 --
+
+>>> Dev Epoch: [34 / 50]
+[predict-34] step: [0 / 249] | f1 = 71.20 | em = 61.72
+used_time: 0.35s
+<> <> Timer [Train] <> <> Interval [Validation Epoch 34]: 0h 01m 33s <> <>
+Validation Epoch 34 -- F1: 70.44, EM: 61.34 --
+<> <> <> Finished Timer [Train] <> <> <> Total time elapsed: 17h 26m 19s <> <> <>
+Finished Training: experiments/exp_18
+ <<<<<<<<<<<<<<<< MODEL SUMMARY >>>>>>>>>>>>>>>> 
+Best epoch = 24
+Dev F1 = 71.29
+Dev EM = 62.07
+ <<<<<<<<<<<<<<<< MODEL SUMMARY >>>>>>>>>>>>>>>> 
+No testing set specified -- skipped testing.
