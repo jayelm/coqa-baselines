@@ -191,6 +191,9 @@ class Model(object):
         # Transfer to CPU/normal tensors for numpy ops (and convert log probabilities to probabilities)
         score_s = score_s.exp().squeeze()
         score_e = score_e.exp().squeeze()
+        if len(score_s.shape) == 1:  # Account for batch size 1
+            score_s = score_s.unsqueeze(0)
+            score_e = score_e.unsqueeze(0)
 
         predictions = []
         spans = []
