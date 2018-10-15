@@ -365,10 +365,10 @@ def sanitize_input_dialog_batched(ex, config, vocab,
     offsets = ex['evidence']['offsets']
 
     if config['predict_raw_text']:
-        sanitized_ex['raw_evidence_text'] = ex['raw_evidence']
-        sanitized_ex['offsets'] = offsets
+        sanitized_ex['offsets'] = []
+        sanitized_ex['raw_evidence_text'] = []
     else:
-        sanitized_ex['evidence_text'] = evidence
+        sanitized_ex['evidence_text'] = []
 
     sanitized_ex['evidence'] = processed_e
 
@@ -392,6 +392,11 @@ def sanitize_input_dialog_batched(ex, config, vocab,
 
         features.append(featurize(annotated_question, ex['evidence'],
                                   feature_dict, history))
+        if config['predict_raw_text']:
+            sanitized_ex['raw_evidence_text'].append(ex['raw_evidence'])
+            sanitized_ex['offsets'].append(offsets)
+        else:
+            sanitized_ex['evidence_text'].append(evidence)
 
     sanitized_ex['questions'] = processed_qs
     sanitized_ex['features'] = features
