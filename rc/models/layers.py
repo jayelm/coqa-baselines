@@ -130,7 +130,6 @@ class SentenceHistoryAttn(nn.Module):
             attn = batch * input_size (lower triangular matrix; attention
             values for each q in dialog history)
         """
-        import ipdb; ipdb.set_trace()
         # Project x through linear layer
         x_proj = self.linear(x)
         x_proj = F.relu(x_proj)
