@@ -112,6 +112,42 @@ class StackedBRNN(nn.Module):
         return output
 
 
+class SentenceHistoryAttn(nn.Module):
+    """
+    Perform self attention over a sequence - match each sequence to itself.
+    Crucially, output is a lower-triangular matrix. So information only flows
+    one way.
+    """
+    def __init__(self, input_size, identity=False):
+        super(SentenceHistoryAttn, self).__init__()
+        self.linear = nn.Linear(input_size, input_size)
+
+    def forward(self, x):
+        """
+        Input shapes:
+            x = batch * input_size (encodings for all qs in dialog history)
+        Output shapes:
+            attn = batch * input_size (lower triangular matrix; attention
+            values for each q in dialog history)
+        """
+        import ipdb; ipdb.set_trace()
+        # Project x through linear layer
+        x_proj = self.linear(x)
+        x_proj = F.relu(x_proj)
+
+        scores = x_proj.mm(x_proj.transpose(1, 0))
+
+        # Score mask
+        scores_mask = torch.ones(scores.size(), dtype=torch.uint8,
+                                 requires_grad=False)
+        scores_mask = torch.triu(scores_mask, diagonal=1)
+        scores.masked_fill_(scores_mask, -float('inf'))
+
+        scores = F.softmax(scores, dim=1)
+
+        return scores
+
+
 class SeqAttnMatch(nn.Module):
     """Given sequences X and Y, match sequence Y to each element in X.
     * o_i = sum(alpha_j * y_j) for i in X

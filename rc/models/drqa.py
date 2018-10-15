@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from .layers import SeqAttnMatch, StackedBRNN, LinearSeqAttn, BilinearSeqAttn
+from .layers import SeqAttnMatch, StackedBRNN, LinearSeqAttn, BilinearSeqAttn, SentenceHistoryAttn
 from .layers import weighted_avg, uniform_weights, dropout
 
 
@@ -81,6 +81,10 @@ class DrQA(nn.Module):
         if config['question_merge'] == 'self_attn':
             self.self_attn = LinearSeqAttn(question_hidden_size)
 
+        # Attention over question history
+        # Do you need a linear layer first? Or just sum of values
+        self.q_history_attn = SentenceHistoryAttn(question_hidden_size)
+
         # Bilinear attention for span start/end
         self.start_attn = BilinearSeqAttn(
             doc_hidden_size,
@@ -145,6 +149,15 @@ class DrQA(nn.Module):
         elif self.config['question_merge'] == 'self_attn':
             q_merge_weights = self.self_attn(question_hiddens.contiguous(), xq_mask)
         question_hidden = weighted_avg(question_hiddens, q_merge_weights)
+
+        # Compute attention between current question encoding and past question vectors
+        # BILINEAR SEQ attn.
+        q_history_merge_weights = self.q_history_attn(question_hidden)
+
+        # Augment question with attention
+        # TODO: This uses individual question vectors, not past historically
+        # influenced question vectors
+        question_hidden += q_history_merge_weights.mm(question_hidden)
 
         # Predict start and end positions
         start_scores = self.start_attn(doc_hiddens, question_hidden, xd_mask)
