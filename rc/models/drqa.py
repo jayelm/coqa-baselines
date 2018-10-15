@@ -157,7 +157,7 @@ class DrQA(nn.Module):
         # Augment question with attention
         # TODO: This uses individual question vectors, not past historically
         # influenced question vectors
-        question_hidden += q_history_merge_weights.mm(question_hidden)
+        question_hidden = question_hidden + q_history_merge_weights.mm(question_hidden)
 
         # Predict start and end positions
         start_scores = self.start_attn(doc_hiddens, question_hidden, xd_mask)
