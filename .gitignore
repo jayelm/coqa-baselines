@@ -16,3 +16,6 @@ data/quac/train.json
 data/quac/val.json
 
 *.out
+
+exp/*
+!exp/README.md

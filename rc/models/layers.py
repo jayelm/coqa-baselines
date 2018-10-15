@@ -2,6 +2,9 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
+from scipy.linalg import toeplitz
+import numpy as np
+
 
 ################################################################################
 # Modules #
@@ -118,10 +121,14 @@ class SentenceHistoryAttn(nn.Module):
     Crucially, output is a lower-triangular matrix. So information only flows
     one way.
     """
-    def __init__(self, input_size, cuda=False):
+    def __init__(self, input_size, recency_bias=False, cuda=False):
         super(SentenceHistoryAttn, self).__init__()
         self.linear = nn.Linear(input_size, input_size)
+        self.recency_bias = recency_bias
         self.cuda = cuda
+
+        if recency_bias:
+            self.recency_weight = nn.Parameter(torch.full((1, ), -0.1))
 
     def forward(self, x):
         """
@@ -140,10 +147,25 @@ class SentenceHistoryAttn(nn.Module):
         # Score mask
         scores_mask = torch.ones(scores.size(), dtype=torch.uint8,
                                  requires_grad=False)
+        if self.recency_bias:
+            # Create recency mask; a toeplitz matrix with higher values the
+            # further away you are from the diagonal
+            # Since recency_weight is negative, this downweights questions that are further away
+            recency_weights_np = toeplitz(np.arange(scores.shape[0], dtype=np.float32))
+            recency_weights = torch.tensor(recency_weights_np, requires_grad=False)
         if self.cuda:
             scores_mask = scores_mask.cuda()
+            if self.recency_bias:
+                recency_weights = recency_weights.cuda()
+
         scores_mask = torch.triu(scores_mask, diagonal=1)
         scores.masked_fill_(scores_mask, -float('inf'))
+
+        if self.recency_bias:
+            recency_weights.masked_fill_(scores_mask, 0.0)
+            recency_weights = self.recency_weight * recency_weights
+
+            scores = scores + recency_weights
 
         scores = F.softmax(scores, dim=1)
 

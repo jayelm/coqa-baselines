@@ -84,7 +84,8 @@ class DrQA(nn.Module):
         # Attention over question history
         # Do you need a linear layer first? Or just sum of values
         self.q_history_attn = SentenceHistoryAttn(question_hidden_size,
-                                                  cuda=config['cuda'])
+                                                  cuda=config['cuda'],
+                                                  recency_bias=config['recency_bias'])
 
         # Bilinear attention for span start/end
         self.start_attn = BilinearSeqAttn(
