@@ -29,6 +29,9 @@ class DrQA(nn.Module):
         doc_input_size = input_w_dim + self.config['num_features']
         if self.config['use_qemb']:
             doc_input_size += input_w_dim
+            if self.config['use_history_qemb']:
+                # Additional historical features
+                doc_input_size += input_w_dim
 
         # Project document and question to the same size as their encoders
         if self.config['resize_rnn_input']:
@@ -118,10 +121,37 @@ class DrQA(nn.Module):
         xd_mask = ex['xd_mask']
         xq_mask = ex['xq_mask']
 
+        # Encode question with RNN + merge hiddens
+        question_hiddens = self.question_rnn(xq_emb, xq_mask)
+        if self.config['question_merge'] == 'avg':
+            q_merge_weights = uniform_weights(question_hiddens, xq_mask)
+        elif self.config['question_merge'] == 'self_attn':
+            q_merge_weights = self.self_attn(question_hiddens.contiguous(), xq_mask)
+        question_hidden = weighted_avg(question_hiddens, q_merge_weights)
+
+        # Compute attention between current question encoding and past question vectors
+        # BILINEAR SEQ attn.
+        q_history_merge_weights = self.q_history_attn(question_hidden)
+        #  q_history_merge_weights = self.q_history_attn(quesiton_hiddens, question_hidden)
+
+        # Augment question with attention
+        # TODO: This uses individual question vectors, not past historically
+        # influenced question vectors
+        question_hidden = question_hidden + q_history_merge_weights.mm(question_hidden)
+
         # Add attention-weighted question representation
         if self.config['use_qemb']:
             xq_weighted_emb = self.qemb_match(xd_emb, xq_emb, xq_mask)
             drnn_input = torch.cat([xd_emb, xq_weighted_emb], 2)
+            if self.config['use_history_qemb']:
+                # NEW: Compute aligned question features over historical
+                # context as averaging over past question alignments, weighted
+                # by the historical question weights found earlier.
+                xq_history_weighted_emb = torch.einsum(
+                    'ij,jkh->ikh',
+                    (q_history_merge_weights, xq_weighted_emb)
+                )
+                drnn_input = torch.cat([drnn_input, xq_history_weighted_emb], 2)
         else:
             drnn_input = xd_emb
 
@@ -143,23 +173,6 @@ class DrQA(nn.Module):
         if self.config['doc_self_attn']:
             xd_weighted_emb = self.doc_self_attn(doc_hiddens, doc_hiddens, xd_mask)
             doc_hiddens = torch.cat([doc_hiddens, xd_weighted_emb], 2)
-
-        # Encode question with RNN + merge hiddens
-        question_hiddens = self.question_rnn(xq_emb, xq_mask)
-        if self.config['question_merge'] == 'avg':
-            q_merge_weights = uniform_weights(question_hiddens, xq_mask)
-        elif self.config['question_merge'] == 'self_attn':
-            q_merge_weights = self.self_attn(question_hiddens.contiguous(), xq_mask)
-        question_hidden = weighted_avg(question_hiddens, q_merge_weights)
-
-        # Compute attention between current question encoding and past question vectors
-        # BILINEAR SEQ attn.
-        q_history_merge_weights = self.q_history_attn(question_hidden)
-
-        # Augment question with attention
-        # TODO: This uses individual question vectors, not past historically
-        # influenced question vectors
-        question_hidden = question_hidden + q_history_merge_weights.mm(question_hidden)
 
         # Predict start and end positions
         start_scores = self.start_attn(doc_hiddens, question_hidden, xd_mask)
