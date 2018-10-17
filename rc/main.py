@@ -60,7 +60,7 @@ def get_args():
     group.add_argument('--recency_bias', type=str2bool, default=False,
                        help='Bias recent questions in dialog history')
     group.add_argument('--use_qemb', type=str2bool, default=True, help='Whether to add question aligned embedding.')
-    group.add_argument('--use_history_qemb', type=str2bool, default=True, help='Whether to add historical averages of question aligned embeddings.')
+    group.add_argument('--use_history_qemb', type=str2bool, default=False, help='Whether to add historical averages of question aligned embeddings.')
     group.add_argument('--f_qem', type=str2bool, default=True, help='Add exact match question feature to embedding.')
     group.add_argument('--f_history', type=str2bool, default=False,
                        help='Add exact match feature corresponding to history.')
