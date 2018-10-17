@@ -60,6 +60,7 @@ class Model(object):
         print('[ Loading saved model %s ]' % fname)
         saved_params = torch.load(fname, map_location=lambda storage, loc: storage)
         self.word_dict = saved_params['word_dict']
+        self.rev_word_dict = {v: k for k, v in self.word_dict.items()}
         self.feature_dict = saved_params['feature_dict']
         self.config['num_features'] = len(self.feature_dict)
         self.state_dict = saved_params['state_dict']
@@ -83,6 +84,7 @@ class Model(object):
         self.feature_dict = self._build_feature_dict(train_set)
         self.config['num_features'] = len(self.feature_dict)
         self.word_dict = word_model.get_vocab()
+        self.rev_word_dict = {v: k for k, v in self.word_dict.items()}
         w_embedding = self._init_embedding(word_model.vocab_size, self.config['embed_size'],
                                            pretrained_vecs=word_model.get_word_vecs())
         self.network = DrQA(self.config, w_embedding)
