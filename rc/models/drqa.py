@@ -247,11 +247,15 @@ class DrQA(nn.Module):
             # Compute attention between current and historical question reprs
             if self.config['qhidden_attn'] == 'q_sentence':
                 qhidden_history_merge_weights = self.qhidden_history_attn(question_hidden)
+            elif self.config['qhidden_attn'] == 'qa_sentence':
+                qhidden_history_merge_weights = self.qhidden_history_attn(qa_hidden, question_hidden)
             else:
                 raise NotImplementedError
             # TODO: This uses individual question vectors, not past historically
             # influenced question vectors
             # Augment question with attention
+            # XXX: When augmenting do you do this BEFORE or AFTER QEMB/AEMB if
+            # those attn mechanisms reuse question_hidden?
             question_hidden = question_hidden + qhidden_history_merge_weights.mm(question_hidden)
 
         # Add attention-weighted question representation
