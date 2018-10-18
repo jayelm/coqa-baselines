@@ -10,6 +10,7 @@ data/coqa/coqa-dev-v1.0-processed.json
 
 data/wordvecs/glove.*.zip
 data/wordvecs/glove.*.txt
+data/wordvecs/coqa.glove.*.txt
 data/wordvecs/*.vec
 
 data/quac/train.json
