@@ -57,13 +57,8 @@ def get_args():
     group.add_argument('--concat_rnn_layers', type=str2bool, default=True, help='Whether to concat RNN layers.')
     group.add_argument('--question_merge', type=str, choices=['avg', 'self_attn'],
                        default='self_attn', help='The way of question encoding.')
-    group.add_argument('--recency_bias', type=str2bool, default=False,
-                       help='Bias recent questions in dialog history')
     group.add_argument('--use_qemb', type=str2bool, default=True, help='Whether to add question aligned embedding.')
-    group.add_argument('--use_history_qemb', type=str2bool, default=False, help='Whether to add historical averages of question aligned embeddings.')
     group.add_argument('--f_qem', type=str2bool, default=True, help='Add exact match question feature to embedding.')
-    group.add_argument('--f_history', type=str2bool, default=False,
-                       help='Add exact match feature corresponding to history.')
     group.add_argument('--f_pos', type=str2bool, default=False, help='Add POS feature to embedding.')
     group.add_argument('--f_ner', type=str2bool, default=False, help='Add NER feature to embedding.')
     group.add_argument('--sum_loss', type=str2bool, default=False, help="Set the type of loss.")
@@ -80,6 +75,18 @@ def get_args():
     group.add_argument('--dropout_rnn_output', type=str2bool, default=True, help='Whether to dropout last layer.')
     group.add_argument('--variational_dropout', type=str2bool, default=True, help='Set variational dropout on/off.')
     group.add_argument('--word_dropout', type=str2bool, default=False, help='Whether to dropout word.')
+
+    group = parser.add_argument_group('dialog_model_spec', 'Options specific to incorporating dialog history')
+    group.add_argument('--f_history', type=str2bool, default=False,
+                       help='Add exact match feature corresponding to history.')
+    group.add_argument('--use_history_qhidden', type=str2bool, default=False, help='Whether to add historical averages of question embeddings to current question vector')
+    group.add_argument('--qhidden_attn', type=str, choices=['sentence', 'word'],
+                       default='sentence', help='How to compute attention over historical questions')
+    group.add_argument('--use_history_qemb', type=str2bool, default=False, help='Whether to add historical averages of question aligned embeddings.')
+    group.add_argument('--qemb_attn', type=str, choices=['qhidden', 'sentence', 'word'],
+                       default='qhidden', help='How to compute attention over historical question alignments (qhidden = share attention weights with --qhidden_attn)')
+    group.add_argument('--recency_bias', type=str2bool, default=False,
+                       help='Bias recent questions in dialog history in qhidden/qemb attention')
 
     # Optimizer
     group = parser.add_argument_group('training_spec')
@@ -101,6 +108,10 @@ def get_args():
     group.add_argument('--save_params', type=str2bool, default=True, help='Whether to save params.')
 
     args = vars(parser.parse_args())
+
+    if args['use_history_qemb'] and args['qemb_attn'] == 'qhidden' and not args['use_history_qhidden']:
+        parser.error("Can't --use_history_qemb with --qemb_attn = 'qhidden' if not --use_history_qhidden. "
+                     "Specify --qemb_attn separately or set --use_history_qemb")
     return args
 
 

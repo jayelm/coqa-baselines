@@ -86,9 +86,23 @@ class DrQA(nn.Module):
 
         # Attention over question history
         # Do you need a linear layer first? Or just sum of values
-        self.q_history_attn = SentenceHistoryAttn(question_hidden_size,
-                                                  cuda=config['cuda'],
-                                                  recency_bias=config['recency_bias'])
+        if self.config['use_history_qhidden']:
+            if self.config['qhidden_attn'] == 'sentence':
+                self.qhidden_history_attn = SentenceHistoryAttn(question_hidden_size,
+                                                          cuda=config['cuda'],
+                                                          recency_bias=config['recency_bias'])
+            else:
+                raise NotImplementedError
+
+        if self.config['use_history_qemb']:
+            if self.config['qemb_attn'] == 'sentence':
+                self.qemb_history_attn = SentenceHistoryAttn(question_hidden_size,
+                                                             cuda=config['cuda'],
+                                                             recency_bias=config['recency_bias'])
+            elif self.config['qemb_attn'] == 'qhidden':
+                pass  # Just share weights with qhidden attention
+            else:
+                raise NotImplementedError
 
         # Bilinear attention for span start/end
         self.start_attn = BilinearSeqAttn(
@@ -129,27 +143,36 @@ class DrQA(nn.Module):
             q_merge_weights = self.self_attn(question_hiddens.contiguous(), xq_mask)
         question_hidden = weighted_avg(question_hiddens, q_merge_weights)
 
-        # Compute attention between current question encoding and past question vectors
-        # BILINEAR SEQ attn.
-        q_history_merge_weights = self.q_history_attn(question_hidden)
-        #  q_history_merge_weights = self.q_history_attn(quesiton_hiddens, question_hidden)
-
-        # Augment question with attention
-        # TODO: This uses individual question vectors, not past historically
-        # influenced question vectors
-        question_hidden = question_hidden + q_history_merge_weights.mm(question_hidden)
+        if self.config['use_history_qhidden']:
+            # Compute attention between current and historical question reprs
+            if self.config['qhidden_attn'] == 'sentence':
+                qhidden_history_merge_weights = self.qhidden_history_attn(question_hidden)
+            else:
+                raise NotImplementedError
+                # TODO: Word level attention
+                #  qhidden_history_merge_weights = self.qhidden_history_attn(quesiton_hiddens, question_hidden)
+            # Augment question with attention
+            # TODO: This uses individual question vectors, not past historically
+            # influenced question vectors
+            question_hidden = question_hidden + qhidden_history_merge_weights.mm(question_hidden)
 
         # Add attention-weighted question representation
         if self.config['use_qemb']:
             xq_weighted_emb = self.qemb_match(xd_emb, xq_emb, xq_mask)
             drnn_input = torch.cat([xd_emb, xq_weighted_emb], 2)
             if self.config['use_history_qemb']:
-                # NEW: Compute aligned question features over historical
+                # Compute aligned question features over historical
                 # context as averaging over past question alignments, weighted
                 # by the historical question weights found earlier.
+                if self.config['qemb_attn'] == 'qhidden':
+                    qemb_history_merge_weights = qhidden_history_merge_weights
+                elif self.config['qemb_attn'] == 'sentence':
+                    qemb_history_merge_weights = self.qemb_history_attn(question_hidden)
+                else:
+                    raise NotImplementedError
                 xq_history_weighted_emb = torch.einsum(
                     'ij,jkh->ikh',
-                    (q_history_merge_weights, xq_weighted_emb)
+                    (qemb_history_merge_weights, xq_weighted_emb)
                 )
                 drnn_input = torch.cat([drnn_input, xq_history_weighted_emb], 2)
         else:
