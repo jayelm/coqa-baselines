@@ -200,6 +200,9 @@ class QAHistoryAttn(nn.Module):
 
         scores = F.softmax(scores, dim=1)
 
+        # Zero out first weights since softmax returns NaNs
+        scores = zero_first(scores)
+
         return scores
 
 
@@ -242,6 +245,9 @@ class QAHistoryAttnBilinear(nn.Module):
 
         scores = F.softmax(scores, dim=1)
 
+        # Zero out first weights
+        scores = zero_first(scores)
+
         return scores
 
 
@@ -269,8 +275,6 @@ class SentenceHistoryAttn(nn.Module):
         Output shapes:
             attn = batch * batch (lower triangular matrix; attention
             values for each q in dialog history)
-
-        WARNING: if use_current_timestep is False, first row will be NaNs!
         """
         # Project x through linear layer
         x_proj = self.linear(x)
@@ -290,6 +294,9 @@ class SentenceHistoryAttn(nn.Module):
             scores = scores + recency_weights
 
         scores = F.softmax(scores, dim=1)
+
+        if not self.use_current_timestep:
+            scores = zero_first(scores)
 
         return scores
 

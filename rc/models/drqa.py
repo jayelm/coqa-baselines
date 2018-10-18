@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from .layers import SeqAttnMatch, StackedBRNN, LinearSeqAttn, BilinearSeqAttn, SentenceHistoryAttn, QAHistoryAttn, QAHistoryAttnBilinear
-from .layers import weighted_avg, uniform_weights, dropout, zero_first
+from .layers import weighted_avg, uniform_weights, dropout
 
 
 class DrQA(nn.Module):
@@ -281,7 +281,6 @@ class DrQA(nn.Module):
                     (qemb_history_merge_weights, xq_weighted_emb)
                 )
                 # XXX: Are zeros in the input ok (if use_current_timestep = False)?
-                xq_history_weighted_emb = zero_first(xq_history_weighted_emb)  # Since first row is NaN
                 drnn_input = torch.cat([drnn_input, xq_history_weighted_emb], 2)
         else:
             drnn_input = xd_emb
@@ -304,7 +303,6 @@ class DrQA(nn.Module):
                 (aemb_history_merge_weights, xa_weighted_emb)
             )
             # XXX: Same here!
-            xa_history_weighted_emb = zero_first(xa_history_weighted_emb)
             drnn_input = torch.cat([drnn_input, xa_history_weighted_emb], 2)
 
         if self.config["num_features"] > 0:
