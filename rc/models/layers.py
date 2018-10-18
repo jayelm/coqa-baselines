@@ -115,17 +115,59 @@ class StackedBRNN(nn.Module):
         return output
 
 
+class WordHistoryAttn(nn.Module):
+    """
+    Perform self attention over a sequence at the word level. Output is a
+    lower-triangular matrix
+
+    That is, for each token embedding for the current question, use a bilinear
+    term to compare similarity between this embedding and each of past question embeddings.
+    """
+    def __init__(self, token_hidden_size, question_hidden_size, recency_bias=False, cuda=False):
+        super(WordHistoryAttn, self).__init__()
+        self.linear = nn.Linear(token_hidden_size, question_hidden_size)
+        self.recency_bias = recency_bias
+        self.cuda = cuda
+
+        if recency_bias:
+            self.recency_weight = nn.Parameter(torch.full((1, ), -0.1))
+
+    def forward(self, question_hiddens, question_hidden, q_mask):
+        """
+        Input shapes:
+            question_hiddens = batch * max_q_len * token_hidden_size (encodings for all q tokens in dialog history)
+            question_hidden = batch * question_hidden_size (encodings for all q tokens in dialog history)
+            q_mask = batch * max_q_len (mask for questions)
+        Output shapes:
+            weights = batch * max_q_len * batch (?)
+            each submatrix of the batch is a historical attention map for the
+            current timestep (lower triangular) which gives weights across all
+            question vectors for each token. Note we need to mask attention
+            weights for each token as well.
+
+        This will require at least one bmm.
+        """
+        self.question_hiddens
+        pass
+
+
 class SentenceHistoryAttn(nn.Module):
     """
     Perform self attention over a sequence - match each sequence to itself.
     Crucially, output is a lower-triangular matrix. So information only flows
     one way.
     """
-    def __init__(self, input_size, recency_bias=False, cuda=False):
+    def __init__(self, input_size, recency_bias=False, cuda=False,
+                 use_current_timestep=True):
         super(SentenceHistoryAttn, self).__init__()
         self.linear = nn.Linear(input_size, input_size)
         self.recency_bias = recency_bias
         self.cuda = cuda
+
+        if use_current_timestep:
+            raise NotImplementedError
+        self.use_current_timestep = use_current_timestep
+
 
         if recency_bias:
             self.recency_weight = nn.Parameter(torch.full((1, ), -0.1))
@@ -158,7 +200,8 @@ class SentenceHistoryAttn(nn.Module):
             if self.recency_bias:
                 recency_weights = recency_weights.cuda()
 
-        scores_mask = torch.triu(scores_mask, diagonal=1)
+        scores_mask = torch.triu(scores_mask,
+                                 diagonal=1 if self.use_current_timestep else 0)
         scores.masked_fill_(scores_mask, -float('inf'))
 
         if self.recency_bias:
@@ -168,6 +211,14 @@ class SentenceHistoryAttn(nn.Module):
             scores = scores + recency_weights
 
         scores = F.softmax(scores, dim=1)
+        if not self.use_current_timestep:
+            # First row will be nans since all 0
+            zeros = torch.zeros((scores.shape[0], ), dtype=torch.float32)
+            if self.cuda:
+                zeros = zeros.cuda()
+            # TODO: This will raise an inplace operation error. How to get
+            # around first error?
+            scores[0] = zeros
 
         return scores
 

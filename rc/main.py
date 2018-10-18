@@ -76,6 +76,7 @@ def get_args():
     group.add_argument('--variational_dropout', type=str2bool, default=True, help='Set variational dropout on/off.')
     group.add_argument('--word_dropout', type=str2bool, default=False, help='Whether to dropout word.')
 
+    # Dialog-specific options
     group = parser.add_argument_group('dialog_model_spec', 'Options specific to incorporating dialog history')
     group.add_argument('--f_history', type=str2bool, default=False,
                        help='Add exact match feature corresponding to history.')
@@ -87,6 +88,8 @@ def get_args():
                        default='qhidden', help='How to compute attention over historical question alignments (qhidden = share attention weights with --qhidden_attn)')
     group.add_argument('--recency_bias', type=str2bool, default=False,
                        help='Bias recent questions in dialog history in qhidden/qemb attention')
+    group.add_argument('--use_current_timestep', type=str2bool, default=True,
+                       help='Include current question in historical question averages')
 
     # Optimizer
     group = parser.add_argument_group('training_spec')

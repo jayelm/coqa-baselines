@@ -89,8 +89,9 @@ class DrQA(nn.Module):
         if self.config['use_history_qhidden']:
             if self.config['qhidden_attn'] == 'sentence':
                 self.qhidden_history_attn = SentenceHistoryAttn(question_hidden_size,
-                                                          cuda=config['cuda'],
-                                                          recency_bias=config['recency_bias'])
+                                                                cuda=config['cuda'],
+                                                                recency_bias=config['recency_bias'],
+                                                                use_current_timestep=config['use_current_timestep'])
             else:
                 raise NotImplementedError
 
@@ -98,7 +99,8 @@ class DrQA(nn.Module):
             if self.config['qemb_attn'] == 'sentence':
                 self.qemb_history_attn = SentenceHistoryAttn(question_hidden_size,
                                                              cuda=config['cuda'],
-                                                             recency_bias=config['recency_bias'])
+                                                             recency_bias=config['recency_bias'],
+                                                             use_current_timestep=config['use_current_timestep'])
             elif self.config['qemb_attn'] == 'qhidden':
                 pass  # Just share weights with qhidden attention
             else:
