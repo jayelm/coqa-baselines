@@ -196,6 +196,7 @@ class QAHistoryAttn(nn.Module):
         # Recency bias
         if self.recency_bias:  # Add recency weights
             recency_weights = make_recency_weights(scores_mask, self.recency_weight, cuda=self.cuda)
+            recency_weights = zero_first(recency_weights)
             scores = scores + recency_weights
 
         scores = F.softmax(scores, dim=1)
@@ -241,6 +242,7 @@ class QAHistoryAttnBilinear(nn.Module):
         # Recency bias
         if self.recency_bias:  # Add recency weights
             recency_weights = make_recency_weights(scores_mask, self.recency_weight, cuda=self.cuda)
+            recency_weights = zero_first(recency_weights)
             scores = scores + recency_weights
 
         scores = F.softmax(scores, dim=1)
@@ -291,6 +293,8 @@ class SentenceHistoryAttn(nn.Module):
 
         if self.recency_bias:  # Add recency weights
             recency_weights = make_recency_weights(scores_mask, self.recency_weight, cuda=self.cuda)
+            if not self.use_current_timestep:
+                recency_weights = zero_first(recency_weights)
             scores = scores + recency_weights
 
         scores = F.softmax(scores, dim=1)
