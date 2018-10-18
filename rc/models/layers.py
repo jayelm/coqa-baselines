@@ -164,7 +164,7 @@ class SentenceHistoryAttn(nn.Module):
         self.recency_bias = recency_bias
         self.cuda = cuda
 
-        if use_current_timestep:
+        if not use_current_timestep:
             raise NotImplementedError
         self.use_current_timestep = use_current_timestep
 
