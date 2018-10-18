@@ -125,20 +125,26 @@ class DrQA(nn.Module):
                 self.answer_self_attn = LinearSeqAttn(answer_hidden_size)
 
 
+        # For qa sentence attention, we concatenate question hidden and answer hidden
+        if self.encode_answer:
+            qa_hidden_size = question_hidden_size + answer_hidden_size
+
         # Attention over question history
-        # Do you need a linear layer first? Or just sum of values
+        # XXX: Do you need a linear layer first? Or just sum of values
         if self.config['use_history_qhidden']:
             if self.config['qhidden_attn'] == 'q_sentence':
                 self.qhidden_history_attn = SentenceHistoryAttn(question_hidden_size,
                                                                 cuda=config['cuda'],
                                                                 recency_bias=config['recency_bias'],
                                                                 use_current_timestep=config['use_current_timestep'])
+            elif self.config['qhidden_attn'] == 'qa_sentence':
+                self.qhidden_history_attn = QAHistoryAttn(qa_hidden_size, question_hidden_size,
+                                                          hidden_size=None,  # Map to question_hidden_size
+                                                          cuda=config['cuda'],
+                                                          recency_bias=config['recency_bias'])
             else:
                 raise NotImplementedError
 
-        # For qa sentence attention, we concatenate question hidden and answer hidden
-        if self.encode_answer:
-            qa_hidden_size = question_hidden_size + answer_hidden_size
         if self.config['use_history_qemb']:
             if self.config['qemb_attn'] == 'q_sentence':
                 self.qemb_history_attn = SentenceHistoryAttn(question_hidden_size,
