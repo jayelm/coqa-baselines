@@ -203,6 +203,48 @@ class QAHistoryAttn(nn.Module):
         return scores
 
 
+class QAHistoryAttnBilinear(nn.Module):
+    """
+    Perform attention by comparing historical question-answer pairs to a
+    current question with a bilinear term.
+    """
+    def __init__(self, qa_hidden_size, question_hidden_size, recency_bias=False,
+                 cuda=False):
+        super(QAHistoryAttnBilinear, self).__init__()
+        self.linear = nn.Linear(qa_hidden_size, question_hidden_size)
+        self.cuda = cuda
+        self.recency_bias = recency_bias
+        if recency_bias:
+            self.recency_weight = nn.Parameter(torch.full((1, ), -0.1))
+
+    def forward(self, qa_hidden, question_hidden):
+        """
+        qa_hidden = batch * qa_hidden_size
+        question_hidden = batch * question_hidden_size
+
+        output:
+        attention_weights = batch * batch (attention weights for each q in dialog history)
+        """
+        qa_proj = self.linear(qa_hidden)  # (batch, question_size)
+
+        scores = question_hidden.mm(qa_proj.transpose(1, 0))
+
+        # Mask
+        scores_mask = make_scores_mask(scores.size(),
+                                       use_current_timestep=False,  # Can't use current ans!
+                                       cuda=self.cuda)
+        scores.masked_fill_(scores_mask, -float('inf'))
+
+        # Recency bias
+        if self.recency_bias:  # Add recency weights
+            recency_weights = make_recency_weights(scores_mask, self.recency_weight, cuda=self.cuda)
+            scores = scores + recency_weights
+
+        scores = F.softmax(scores, dim=1)
+
+        return scores
+
+
 class SentenceHistoryAttn(nn.Module):
     """
     Perform self attention over a sequence - match each sequence to itself.

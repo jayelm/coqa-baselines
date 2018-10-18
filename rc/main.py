@@ -81,13 +81,13 @@ def get_args():
     group.add_argument('--f_history', type=str2bool, default=False,
                        help='Add exact match feature corresponding to history.')
     group.add_argument('--use_history_qhidden', type=str2bool, default=False, help='Whether to add historical averages of question embeddings to current question vector')
-    group.add_argument('--qhidden_attn', type=str, choices=['qa_sentence', 'q_sentence', 'word'],
+    group.add_argument('--qhidden_attn', type=str, choices=['qa_sentence', 'qa_sentence_bi', 'q_sentence', 'word'],
                        default='q_sentence', help='How to compute attention over historical questions')
     group.add_argument('--use_history_qemb', type=str2bool, default=False, help='Whether to add historical averages of question aligned embeddings.')
-    group.add_argument('--qemb_attn', type=str, choices=['qhidden', 'qa_sentence', 'q_sentence', 'word'],
+    group.add_argument('--qemb_attn', type=str, choices=['qhidden', 'qa_sentence', 'qa_sentence_bi', 'q_sentence', 'word'],
                        default='qhidden', help='How to compute attention over historical question alignments (qhidden = share attention weights with --qhidden_attn)')
     group.add_argument('--use_history_aemb', type=str2bool, default=False, help='Whether to add historical averages of answer embeddings.')
-    group.add_argument('--aemb_attn', type=str, choices=['qhidden', 'qemb', 'qa_sentence', 'q_sentence', 'word'],
+    group.add_argument('--aemb_attn', type=str, choices=['qhidden', 'qemb', 'qa_sentence', 'qa_sentence_bi', 'q_sentence', 'word'],
                        default='qhidden', help='How to compute attention over historical answer alignments')
     group.add_argument('--answer_merge', type=str, choices=['avg', 'self_attn'],
                        default='self_attn', help='How to merge (historical) answers')

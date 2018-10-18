@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from .layers import SeqAttnMatch, StackedBRNN, LinearSeqAttn, BilinearSeqAttn, SentenceHistoryAttn, QAHistoryAttn
+from .layers import SeqAttnMatch, StackedBRNN, LinearSeqAttn, BilinearSeqAttn, SentenceHistoryAttn, QAHistoryAttn, QAHistoryAttnBilinear
 from .layers import weighted_avg, uniform_weights, dropout, zero_first
 
 
@@ -24,7 +24,7 @@ class DrQA(nn.Module):
 
         # Whether we need to encode answer information
         # FIXME: Is it really necessary to throw things into an answer encoder?
-        self.encode_answer = any(config[cfg] == 'qa_sentence' for cfg in
+        self.encode_answer = any(config[cfg] in ('qa_sentence', 'qa_sentence_bi') for cfg in
                                  ['qhidden_attn', 'qemb_attn', 'aemb_attn'])
 
         # Projection for attention weighted question
@@ -150,6 +150,10 @@ class DrQA(nn.Module):
                                                        hidden_size=None,  # Map to question_hidden_size
                                                        cuda=config['cuda'],
                                                        recency_bias=config['recency_bias'])
+            elif self.config['qemb_attn'] == 'qa_sentence_bi':
+                self.qemb_history_attn = QAHistoryAttnBilinear(qa_hidden_size, question_hidden_size,
+                                                               cuda=config['cuda'],
+                                                               recency_bias=config['recency_bias'])
             elif self.config['qemb_attn'] == 'qhidden':
                 pass  # Just share weights with qhidden attention
             else:
@@ -166,6 +170,10 @@ class DrQA(nn.Module):
                                                        hidden_size=None,  # Map to question_hidden_size
                                                        cuda=config['cuda'],
                                                        recency_bias=config['recency_bias'])
+            elif self.config['aemb_attn'] == 'qa_sentence_bi':
+                self.aemb_history_attn = QAHistoryAttnBilinear(qa_hidden_size, question_hidden_size,
+                                                               cuda=config['cuda'],
+                                                               recency_bias=config['recency_bias'])
             elif self.config['aemb_attn'] == 'qhidden':
                 pass  # Just share weights with qhidden attention
             elif self.config['aemb_attn'] == 'qemb':
@@ -254,6 +262,8 @@ class DrQA(nn.Module):
                     qemb_history_merge_weights = self.qemb_history_attn(question_hidden)
                 elif self.config['qemb_attn'] == 'qa_sentence':
                     qemb_history_merge_weights = self.qemb_history_attn(qa_hidden, question_hidden)
+                elif self.config['qemb_attn'] == 'qa_sentence_bi':
+                    qemb_history_merge_weights = self.qemb_history_attn(qa_hidden, question_hidden)
                 else:
                     raise NotImplementedError
                 xq_history_weighted_emb = torch.einsum(
@@ -275,6 +285,8 @@ class DrQA(nn.Module):
             elif self.config['aemb_attn'] == 'q_sentence':
                 aemb_history_merge_weights = self.aemb_history_attn(question_hidden)
             elif self.config['aemb_attn'] == 'qa_sentence':
+                aemb_history_merge_weights = self.aemb_history_attn(qa_hidden, question_hidden)
+            elif self.config['aemb_attn'] == 'qa_sentence_bi':
                 aemb_history_merge_weights = self.aemb_history_attn(qa_hidden, question_hidden)
 
             xa_history_weighted_emb = torch.einsum(
