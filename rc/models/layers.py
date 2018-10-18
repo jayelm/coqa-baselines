@@ -163,11 +163,7 @@ class SentenceHistoryAttn(nn.Module):
         self.linear = nn.Linear(input_size, input_size)
         self.recency_bias = recency_bias
         self.cuda = cuda
-
-        if not use_current_timestep:
-            raise NotImplementedError
         self.use_current_timestep = use_current_timestep
-
 
         if recency_bias:
             self.recency_weight = nn.Parameter(torch.full((1, ), -0.1))
@@ -200,13 +196,8 @@ class SentenceHistoryAttn(nn.Module):
         scores = F.softmax(scores, dim=1)
 
         if not self.use_current_timestep:
-            # First row will be nans since all 0
-            zeros = torch.zeros((scores.shape[0], ), dtype=torch.float32)
-            if self.cuda:
-                zeros = zeros.cuda()
-            # TODO: This will raise an inplace operation error. How to get
-            # around first error?
-            scores[0] = zeros
+            fix_mask = make_softmax_fix_mask(scores.shape, cuda=self.cuda)
+            scores.masked_fill_(fix_mask, 0.0)
 
         return scores
 
@@ -224,6 +215,21 @@ def make_scores_mask(scores_shape, use_current_timestep=True, cuda=False):
     scores_mask = torch.triu(scores_mask,
                              diagonal=1 if use_current_timestep else 0)
     return scores_mask
+
+
+def make_softmax_fix_mask(scores_shape, cuda=False):
+    """
+    Make matrix like scores but with first row filled with 0s to fix softmax
+    nans
+    """
+    fix_mask_np = np.zeros(scores_shape, dtype=np.uint8)
+    fix_mask_np[0] = 1
+    fix_mask = torch.tensor(fix_mask_np, dtype=torch.uint8,
+                            requires_grad=False)
+    if cuda:
+        fix_mask = fix_mask.cuda()
+
+    return fix_mask
 
 
 def make_recency_weights(scores_mask, recency_weight, cuda=False):
