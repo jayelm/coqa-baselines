@@ -459,6 +459,6 @@ def weighted_avg(x, weights):
 
 def zero_first(arr):
     arr_rest = arr[1:]
-    zeros = torch.zeros_like(arr[0]).unsqueeze(0)
+    zeros = torch.zeros_like(arr[0], requires_grad=False).unsqueeze(0)
     arr_new = torch.cat([zeros, arr_rest], 0)
     return arr_new
