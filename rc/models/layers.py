@@ -177,7 +177,7 @@ class SentenceHistoryAttn(nn.Module):
         Input shapes:
             x = batch * input_size (encodings for all qs in dialog history)
         Output shapes:
-            attn = batch * input_size (lower triangular matrix; attention
+            attn = batch * batch (lower triangular matrix; attention
             values for each q in dialog history)
         """
         # Project x through linear layer
@@ -187,30 +187,18 @@ class SentenceHistoryAttn(nn.Module):
         scores = x_proj.mm(x_proj.transpose(1, 0))
 
         # Score mask
-        scores_mask = torch.ones(scores.size(), dtype=torch.uint8,
-                                 requires_grad=False)
-        if self.recency_bias:
-            # Create recency mask; a toeplitz matrix with higher values the
-            # further away you are from the diagonal
-            # Since recency_weight is negative, this downweights questions that are further away
-            recency_weights_np = toeplitz(np.arange(scores.shape[0], dtype=np.float32))
-            recency_weights = torch.tensor(recency_weights_np, requires_grad=False)
-        if self.cuda:
-            scores_mask = scores_mask.cuda()
-            if self.recency_bias:
-                recency_weights = recency_weights.cuda()
-
-        scores_mask = torch.triu(scores_mask,
-                                 diagonal=1 if self.use_current_timestep else 0)
+        scores_mask = make_scores_mask(scores.size(),
+                                       use_current_timestep=self.use_current_timestep,
+                                       cuda=self.cuda)
+        # Mask scores and weights with upper triangular mask
         scores.masked_fill_(scores_mask, -float('inf'))
 
-        if self.recency_bias:
-            recency_weights.masked_fill_(scores_mask, 0.0)
-            recency_weights = self.recency_weight * recency_weights
-
+        if self.recency_bias:  # Add recency weights
+            recency_weights = make_recency_weights(scores_mask, self.recency_weight, cuda=self.cuda)
             scores = scores + recency_weights
 
         scores = F.softmax(scores, dim=1)
+
         if not self.use_current_timestep:
             # First row will be nans since all 0
             zeros = torch.zeros((scores.shape[0], ), dtype=torch.float32)
@@ -221,6 +209,41 @@ class SentenceHistoryAttn(nn.Module):
             scores[0] = zeros
 
         return scores
+
+
+def make_scores_mask(scores_shape, use_current_timestep=True, cuda=False):
+    """
+    Make upper triangular mask of 1s and 0s. If use_current_timestep is False,
+    diagonal is also 1 (i.e. masked).
+    """
+    scores_mask = torch.ones(scores_shape, dtype=torch.uint8,
+                             requires_grad=False)
+    if cuda:
+        scores_mask = scores_mask.cuda()
+
+    scores_mask = torch.triu(scores_mask,
+                             diagonal=1 if use_current_timestep else 0)
+    return scores_mask
+
+
+def make_recency_weights(scores_mask, recency_weight, cuda=False):
+    """
+    Create a recency weights mask from the given scores mask and recency weight.
+    Upper triangular with specific diagonal dependent on scores mask.
+    """
+    # Create recency mask; a toeplitz matrix with higher values the
+    # further away you are from the diagonal
+    # Since recency_weight is negative, this downweights questions that are further away
+    recency_weights_np = toeplitz(np.arange(scores_mask.shape[0], dtype=np.float32))
+    recency_weights = torch.tensor(recency_weights_np, requires_grad=False)
+
+    if cuda:
+        recency_weights = recency_weights.cuda()
+
+    recency_weights.masked_fill_(scores_mask, 0.0)
+    recency_weights = recency_weight * recency_weights
+
+    return recency_weights
 
 
 class SeqAttnMatch(nn.Module):
