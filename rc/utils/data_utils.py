@@ -400,10 +400,16 @@ def sanitize_input_dialog_batched(ex, config, vocab,
 
         # Answer processing. Just pick first answer
         answer = annotated_answer['word']
-        processed_a = [
-            vocab[w] if w in vocab else vocab[Constants._UNK_TOKEN]
-            for w in answer
-        ]
+        if not answer:
+            # Answer tokens were unicode or something else that caused
+            # stanfordnlp annotation errors, so this is empty. Replace with a
+            # single UNK token.
+            processed_a = [vocab[Constants._UNK_TOKEN]]
+        else:
+            processed_a = [
+                vocab[w] if w in vocab else vocab[Constants._UNK_TOKEN]
+                for w in answer
+            ]
 
         processed_as.append(processed_a)
 
