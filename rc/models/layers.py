@@ -151,6 +151,58 @@ class WordHistoryAttn(nn.Module):
         pass
 
 
+class QAHistoryAttn(nn.Module):
+    """
+    Perform attention by comparing historical question-answer pairs to a
+    current question with a bilinear term.
+    """
+    def __init__(self, qa_hidden_size, question_hidden_size, hidden_size=None, recency_bias=False,
+                 cuda=False):
+        super(QAHistoryAttn, self).__init__()
+        if hidden_size is None:
+            hidden_size = question_hidden_size
+        self.linear_question = nn.Linear(question_hidden_size, hidden_size)
+        self.linear_qa = nn.Linear(qa_hidden_size, hidden_size)
+        self.cuda = cuda
+        self.recency_bias = recency_bias
+        if recency_bias:
+            self.recency_weight = nn.Parameter(torch.full((1, ), -0.1))
+
+    def forward(self, qa_hidden, question_hidden):
+        """
+        qa_hidden = batch * qa_hidden_size
+        question_hidden = batch * question_hidden_size
+
+        output:
+        attention_weights = batch * batch (attention weights for each q in dialog history)
+
+        WARNING: first row will be NaNs due to softmax - must deal with this
+        outside of this computation!
+        """
+        question_proj = self.linear_question(question_hidden)
+        question_proj = F.relu(question_proj)  # (batch, hidden_size)
+
+        qa_proj = self.linear_qa(qa_hidden)
+        qa_proj = F.relu(qa_proj)  # (batch, hidden_size)
+
+        scores = question_proj.mm(qa_proj.transpose(1, 0))
+
+        # Mask
+        scores_mask = make_scores_mask(scores.size(),
+                                       use_current_timestep=False,  # Can't use current ans!
+                                       cuda=self.cuda)
+        scores.masked_fill_(scores_mask, -float('inf'))
+
+        # Recency bias
+        if self.recency_bias:  # Add recency weights
+            recency_weights = make_recency_weights(scores_mask, self.recency_weight, cuda=self.cuda)
+            scores = scores + recency_weights
+
+        scores = F.softmax(scores, dim=1)
+
+        return scores
+
+
 class SentenceHistoryAttn(nn.Module):
     """
     Perform self attention over a sequence - match each sequence to itself.
@@ -175,6 +227,8 @@ class SentenceHistoryAttn(nn.Module):
         Output shapes:
             attn = batch * batch (lower triangular matrix; attention
             values for each q in dialog history)
+
+        WARNING: if use_current_timestep is False, first row will be NaNs!
         """
         # Project x through linear layer
         x_proj = self.linear(x)
@@ -195,10 +249,6 @@ class SentenceHistoryAttn(nn.Module):
 
         scores = F.softmax(scores, dim=1)
 
-        if not self.use_current_timestep:
-            fix_mask = make_softmax_fix_mask(scores.shape, cuda=self.cuda)
-            scores.masked_fill_(fix_mask, 0.0)
-
         return scores
 
 
@@ -215,21 +265,6 @@ def make_scores_mask(scores_shape, use_current_timestep=True, cuda=False):
     scores_mask = torch.triu(scores_mask,
                              diagonal=1 if use_current_timestep else 0)
     return scores_mask
-
-
-def make_softmax_fix_mask(scores_shape, cuda=False):
-    """
-    Make matrix like scores but with first row filled with 0s to fix softmax
-    nans
-    """
-    fix_mask_np = np.zeros(scores_shape, dtype=np.uint8)
-    fix_mask_np[0] = 1
-    fix_mask = torch.tensor(fix_mask_np, dtype=torch.uint8,
-                            requires_grad=False)
-    if cuda:
-        fix_mask = fix_mask.cuda()
-
-    return fix_mask
 
 
 def make_recency_weights(scores_mask, recency_weight, cuda=False):
@@ -378,3 +413,10 @@ def weighted_avg(x, weights):
     weights = batch * len
     """
     return weights.unsqueeze(1).bmm(x).squeeze(1)
+
+
+def zero_first(arr):
+    arr_rest = arr[1:]
+    zeros = torch.zeros_like(arr[0]).unsqueeze(0)
+    arr_new = torch.cat([zeros, arr_rest], 0)
+    return arr_new

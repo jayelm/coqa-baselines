@@ -1,8 +1,8 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from .layers import SeqAttnMatch, StackedBRNN, LinearSeqAttn, BilinearSeqAttn, SentenceHistoryAttn
-from .layers import weighted_avg, uniform_weights, dropout
+from .layers import SeqAttnMatch, StackedBRNN, LinearSeqAttn, BilinearSeqAttn, SentenceHistoryAttn, QAHistoryAttn
+from .layers import weighted_avg, uniform_weights, dropout, zero_first
 
 
 class DrQA(nn.Module):
@@ -17,20 +17,35 @@ class DrQA(nn.Module):
         self.w_embedding = w_embedding
         input_w_dim = self.w_embedding.embedding_dim
         q_input_size = input_w_dim
+        a_input_size = input_w_dim
         if self.config['fix_embeddings']:
             for p in self.w_embedding.parameters():
                 p.requires_grad = False
 
+        # Whether we need to encode answer information
+        # FIXME: Is it really necessary to throw things into an answer encoder?
+        self.encode_answer = any(config[cfg] == 'qa_sentence' for cfg in
+                                 ['qhidden_attn', 'qemb_attn', 'aemb_attn'])
+
         # Projection for attention weighted question
         if self.config['use_qemb']:
             self.qemb_match = SeqAttnMatch(input_w_dim)
+        if self.encode_answer:
+            self.aemb_match = SeqAttnMatch(input_w_dim)
 
         # Input size to RNN: word emb + question emb + manual features
         doc_input_size = input_w_dim + self.config['num_features']
         if self.config['use_qemb']:
             doc_input_size += input_w_dim
             if self.config['use_history_qemb']:
-                # Additional historical features
+                # Additional historical question features
+                # FIXME: I'm computing attention weights between question
+                # ENCODINGS (i.e. through stacked BiLSTM) but adding those to
+                # xq_weighted_emb which is just soft alignments!
+                doc_input_size += input_w_dim
+            if self.config['use_history_aemb']:
+                # Additional historical answer features
+                # FIXME: Same here!
                 doc_input_size += input_w_dim
 
         # Project document and question to the same size as their encoders
@@ -53,6 +68,22 @@ class DrQA(nn.Module):
             bidirectional=True,
         )
 
+        # RNN answer encoder
+        if self.encode_answer:
+            # FIXME: Isn't this answer encoder overparameterized?
+            self.answer_rnn = StackedBRNN(
+                input_size=a_input_size,
+                hidden_size=config['hidden_size'],
+                num_layers=config['num_layers'],
+                dropout_rate=config['dropout_rnn'],
+                dropout_output=config['dropout_rnn_output'],
+                variational_dropout=config['variational_dropout'],
+                concat_layers=config['concat_rnn_layers'],
+                rnn_type=self._RNN_TYPES[config['rnn_type']],
+                padding=config['rnn_padding'],
+                bidirectional=True,
+            )
+
         # RNN question encoder
         self.question_rnn = StackedBRNN(
             input_size=q_input_size,
@@ -70,9 +101,13 @@ class DrQA(nn.Module):
         # Output sizes of rnn encoders
         doc_hidden_size = 2 * config['hidden_size']
         question_hidden_size = 2 * config['hidden_size']
+        if self.encode_answer:
+            answer_hidden_size = 2 * config['hidden_size']
         if config['concat_rnn_layers']:
             doc_hidden_size *= config['num_layers']
             question_hidden_size *= config['num_layers']
+            if self.encode_answer:
+                answer_hidden_size *= config['num_layers']
 
         if config['doc_self_attn']:
             self.doc_self_attn = SeqAttnMatch(doc_hidden_size)
@@ -84,10 +119,16 @@ class DrQA(nn.Module):
         if config['question_merge'] == 'self_attn':
             self.self_attn = LinearSeqAttn(question_hidden_size)
 
+        # Answer merging
+        if self.encode_answer:
+            if config['answer_merge'] == 'self_attn':
+                self.answer_self_attn = LinearSeqAttn(answer_hidden_size)
+
+
         # Attention over question history
         # Do you need a linear layer first? Or just sum of values
         if self.config['use_history_qhidden']:
-            if self.config['qhidden_attn'] == 'sentence':
+            if self.config['qhidden_attn'] == 'q_sentence':
                 self.qhidden_history_attn = SentenceHistoryAttn(question_hidden_size,
                                                                 cuda=config['cuda'],
                                                                 recency_bias=config['recency_bias'],
@@ -95,14 +136,40 @@ class DrQA(nn.Module):
             else:
                 raise NotImplementedError
 
+        # For qa sentence attention, we concatenate question hidden and answer hidden
+        if self.encode_answer:
+            qa_hidden_size = question_hidden_size + answer_hidden_size
         if self.config['use_history_qemb']:
-            if self.config['qemb_attn'] == 'sentence':
+            if self.config['qemb_attn'] == 'q_sentence':
                 self.qemb_history_attn = SentenceHistoryAttn(question_hidden_size,
                                                              cuda=config['cuda'],
                                                              recency_bias=config['recency_bias'],
                                                              use_current_timestep=config['use_current_timestep'])
+            elif self.config['qemb_attn'] == 'qa_sentence':
+                self.qemb_history_attn = QAHistoryAttn(qa_hidden_size, question_hidden_size,
+                                                       hidden_size=None,  # Map to question_hidden_size
+                                                       cuda=config['cuda'],
+                                                       recency_bias=config['recency_bias'])
             elif self.config['qemb_attn'] == 'qhidden':
                 pass  # Just share weights with qhidden attention
+            else:
+                raise NotImplementedError
+
+        if self.config['use_history_aemb']:
+            if self.config['aemb_attn'] == 'q_sentence':
+                self.aemb_history_attn = SentenceHistoryAttn(question_hidden_size,
+                                                             cuda=config['cuda'],
+                                                             recency_bias=config['recency_bias'],
+                                                             use_current_timestep=config['use_current_timestep'])
+            elif self.config['aemb_attn'] == 'qa_sentence':
+                self.aemb_history_attn = QAHistoryAttn(qa_hidden_size, question_hidden_size,
+                                                       hidden_size=None,  # Map to question_hidden_size
+                                                       cuda=config['cuda'],
+                                                       recency_bias=config['recency_bias'])
+            elif self.config['aemb_attn'] == 'qhidden':
+                pass  # Just share weights with qhidden attention
+            elif self.config['aemb_attn'] == 'qemb':
+                pass  # Just share weights with qemb attention
             else:
                 raise NotImplementedError
 
@@ -130,12 +197,18 @@ class DrQA(nn.Module):
         # Embed both document and question
         xq_emb = self.w_embedding(ex['xq'])                         # (batch, max_q_len, word_embed)
         xd_emb = self.w_embedding(ex['xd'])                         # (batch, max_d_len, word_embed)
+        if self.encode_answer:
+            xa_emb = self.w_embedding(ex['xa'])
 
         shared_axes = [2] if self.config['word_dropout'] else []
         xq_emb = dropout(xq_emb, self.config['dropout_emb'], shared_axes=shared_axes, training=self.training)
         xd_emb = dropout(xd_emb, self.config['dropout_emb'], shared_axes=shared_axes, training=self.training)
+        if self.encode_answer:
+            xa_emb = dropout(xa_emb, self.config['dropout_emb'], shared_axes=shared_axes, training=self.training)
         xd_mask = ex['xd_mask']
         xq_mask = ex['xq_mask']
+        if self.encode_answer:
+            xa_mask = ex['xa_mask']
 
         # Encode question with RNN + merge hiddens
         question_hiddens = self.question_rnn(xq_emb, xq_mask)
@@ -145,17 +218,26 @@ class DrQA(nn.Module):
             q_merge_weights = self.self_attn(question_hiddens.contiguous(), xq_mask)
         question_hidden = weighted_avg(question_hiddens, q_merge_weights)
 
+        # Encode answer with RNN + merge hiddens
+        if self.encode_answer:
+            answer_hiddens = self.answer_rnn(xa_emb, xa_mask)
+            if self.config['answer_merge'] == 'avg':
+                a_merge_weights = uniform_weights(answer_hiddens, xa_mask)
+            elif self.config['answer_merge'] == 'self_attn':
+                a_merge_weights = self.answer_self_attn(answer_hiddens.contiguous(), xa_mask)
+            answer_hidden = weighted_avg(answer_hiddens, a_merge_weights)
+            # Concat answer + question
+            qa_hidden = torch.cat([question_hidden, answer_hidden], 1)
+
         if self.config['use_history_qhidden']:
             # Compute attention between current and historical question reprs
-            if self.config['qhidden_attn'] == 'sentence':
+            if self.config['qhidden_attn'] == 'q_sentence':
                 qhidden_history_merge_weights = self.qhidden_history_attn(question_hidden)
             else:
                 raise NotImplementedError
-                # TODO: Word level attention
-                #  qhidden_history_merge_weights = self.qhidden_history_attn(quesiton_hiddens, question_hidden)
-            # Augment question with attention
             # TODO: This uses individual question vectors, not past historically
             # influenced question vectors
+            # Augment question with attention
             question_hidden = question_hidden + qhidden_history_merge_weights.mm(question_hidden)
 
         # Add attention-weighted question representation
@@ -168,17 +250,40 @@ class DrQA(nn.Module):
                 # by the historical question weights found earlier.
                 if self.config['qemb_attn'] == 'qhidden':
                     qemb_history_merge_weights = qhidden_history_merge_weights
-                elif self.config['qemb_attn'] == 'sentence':
+                elif self.config['qemb_attn'] == 'q_sentence':
                     qemb_history_merge_weights = self.qemb_history_attn(question_hidden)
+                elif self.config['qemb_attn'] == 'qa_sentence':
+                    qemb_history_merge_weights = self.qemb_history_attn(qa_hidden, question_hidden)
                 else:
                     raise NotImplementedError
                 xq_history_weighted_emb = torch.einsum(
                     'ij,jkh->ikh',
                     (qemb_history_merge_weights, xq_weighted_emb)
                 )
+                # XXX: Are zeros in the input ok (if use_current_timestep = False)?
+                xq_history_weighted_emb = zero_first(xq_history_weighted_emb)  # Since first row is NaN
                 drnn_input = torch.cat([drnn_input, xq_history_weighted_emb], 2)
         else:
             drnn_input = xd_emb
+
+        if self.config['use_history_aemb']:
+            xa_weighted_emb = self.aemb_match(xd_emb, xa_emb, xa_mask)
+            if self.config['aemb_attn'] == 'qhidden':
+                aemb_history_merge_weights = qhidden_history_merge_weights
+            elif self.config['aemb_attn'] == 'qemb':
+                aemb_history_merge_weights = qemb_history_merge_weights
+            elif self.config['aemb_attn'] == 'q_sentence':
+                aemb_history_merge_weights = self.aemb_history_attn(question_hidden)
+            elif self.config['aemb_attn'] == 'qa_sentence':
+                aemb_history_merge_weights = self.aemb_history_attn(qa_hidden, question_hidden)
+
+            xa_history_weighted_emb = torch.einsum(
+                'ij,jkh->ikh',
+                (aemb_history_merge_weights, xa_weighted_emb)
+            )
+            # XXX: Same here!
+            xa_history_weighted_emb = zero_first(xa_history_weighted_emb)
+            drnn_input = torch.cat([drnn_input, xa_history_weighted_emb], 2)
 
         if self.config["num_features"] > 0:
             drnn_input = torch.cat([drnn_input, ex['xd_f']], 2)

@@ -202,6 +202,7 @@ class DialogBatchedCoQADataset(Dataset):
 
             questions = []
             answers = []
+            annotated_answers = []
             answer_spans = []
 
             history = []
@@ -221,6 +222,9 @@ class DialogBatchedCoQADataset(Dataset):
                 if 'additional_answers' in qa:
                     this_answer += qa['additional_answers']
                 answers.append(this_answer)
+
+                annotated_answer = qa['annotated_answer']
+                annotated_answers.append(annotated_answer)
 
                 # Increment vocab
                 for w in q['word']:
@@ -257,6 +261,7 @@ class DialogBatchedCoQADataset(Dataset):
                 'evidence': document,
                 'questions': questions,
                 'answers': answers,
+                'annotated_answers': annotated_answers,
                 'histories': histories,
                 'targets': answer_spans,
                 'raw_evidence': ex['context']
@@ -374,14 +379,17 @@ def sanitize_input_dialog_batched(ex, config, vocab,
 
     # Just transfer over targets/answers directly
     sanitized_ex['targets'] = ex['targets']
+    # These are raw answers; annotated answers used later
     sanitized_ex['answers'] = ex['answers']
     sanitized_ex['id'] = ex['id']
 
     processed_qs = []
+    processed_as = []
     features = []
 
-    for annotated_question, history in zip(ex['questions'],
-                                           ex['histories']):
+    for annotated_question, history, annotated_answer in zip(ex['questions'],
+                                                             ex['histories'],
+                                                             ex['annotated_answers']):
         question = annotated_question['word']
         processed_q = [
             vocab[w] if w in vocab else vocab[Constants._UNK_TOKEN]
@@ -389,6 +397,15 @@ def sanitize_input_dialog_batched(ex, config, vocab,
         ]
 
         processed_qs.append(processed_q)
+
+        # Answer processing. Just pick first answer
+        answer = annotated_answer['word']
+        processed_a = [
+            vocab[w] if w in vocab else vocab[Constants._UNK_TOKEN]
+            for w in answer
+        ]
+
+        processed_as.append(processed_a)
 
         features.append(featurize(annotated_question, ex['evidence'],
                                   feature_dict, history))
@@ -399,6 +416,7 @@ def sanitize_input_dialog_batched(ex, config, vocab,
             sanitized_ex['evidence_text'].append(evidence)
 
     sanitized_ex['questions'] = processed_qs
+    sanitized_ex['annotated_answers'] = processed_as
     sanitized_ex['features'] = features
 
     return sanitized_ex
@@ -422,6 +440,14 @@ def vectorize_input_dialog_batched(batch, config, training=True, device=None):
     for i, q in enumerate(batch['questions']):
         xq[i, :len(q)].copy_(torch.LongTensor(q))
         xq_mask[i, :len(q)].fill_(0)
+
+    # Part 1.5: Answer Words
+    max_a_len = max([len(a) for a in batch['annotated_answers']])
+    xa = torch.LongTensor(batch_size, max_a_len).fill_(0)
+    xa_mask = torch.ByteTensor(batch_size, max_a_len).fill_(1)
+    for i, a in enumerate(batch['annotated_answers']):
+        xa[i, :len(a)].copy_(torch.LongTensor(a))
+        xa_mask[i, :len(a)].fill_(0)
 
     # Part 2: Document Words
     max_d_len = len(batch['evidence'])
@@ -455,6 +481,8 @@ def vectorize_input_dialog_batched(batch, config, training=True, device=None):
                'answers': batch['answers'],
                'xq': xq.to(device) if device else xq,
                'xq_mask': xq_mask.to(device) if device else xq_mask,
+               'xa': xa.to(device) if device else xa,
+               'xa_mask': xa_mask.to(device) if device else xa_mask,
                'xd': xd.to(device) if device else xd,
                'xd_mask': xd_mask.to(device) if device else xd_mask,
                'xd_f': xd_f.to(device) if device else xd_f,
