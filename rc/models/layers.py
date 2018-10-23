@@ -351,6 +351,26 @@ def make_recency_weights(scores_mask, recency_weight, cuda=False):
     return recency_weights
 
 
+def make_dialog_recency_weights(scores_mask, max_qa_len, recency_weight, cuda=False):
+    """
+    Create a recency weights mask from the given scores mask and recency weight.
+    Upper triangular with specific diagonal dependent on scores mask.
+    """
+    # Create recency mask; a toeplitz matrix with higher values the
+    # further away you are from the diagonal
+    # Since recency_weight is negative, this downweights questions that are further away
+    recency_weights_np = toeplitz(np.arange(scores_mask.shape[0], dtype=np.float32))
+    recency_weights_np = np.repeat(recency_weights_np, max_qa_len).reshape(scores_mask.shape[0], -1)
+    recency_weights = torch.tensor(recency_weights_np, requires_grad=False)
+
+    if cuda:
+        recency_weights = recency_weights.cuda()
+
+    recency_weights = recency_weight * recency_weights
+
+    return recency_weights
+
+
 class DialogSeqAttnMatch(nn.Module):
     """
     Like SeqAttnMatch, but operates on dialog history. Prevents time travel and
@@ -415,9 +435,9 @@ class DialogSeqAttnMatch(nn.Module):
         assert xdialog_emb_tiled.shape[:2] == dialog_scores_mask.shape
         xdialog_mask_tiled.masked_fill_(dialog_scores_mask, 1)
 
-        return self.seqattnmatch_forward(xd_emb, xdialog_emb_tiled, xdialog_mask_tiled)
+        return self.seqattnmatch_forward(xd_emb, xdialog_emb_tiled, xdialog_mask_tiled, max_dialog_len)
 
-    def seqattnmatch_forward(self, x, y, y_mask):
+    def seqattnmatch_forward(self, x, y, y_mask, max_dialog_len):
         """
         This is directly taken from seqattnmatch
         """
@@ -438,14 +458,21 @@ class DialogSeqAttnMatch(nn.Module):
         y_mask = y_mask.unsqueeze(1).expand(scores.size())  # (batch, len1, len2)
         scores.masked_fill_(y_mask, -float('inf'))
 
+        if self.recency_bias:
+            recency_weights = make_dialog_recency_weights(y_mask, max_dialog_len,
+                                                          self.recency_weight,
+                                                          cuda=self.cuda)
+            recency_weights = zero_first(recency_weights)
+            # Expand weights along each token of the document (i.e. dimension 1)
+            recency_weights = recency_weights.unsqueeze(1).expand(-1, scores.shape[1], -1)
+            scores_pre = scores
+            scores = scores + recency_weights
+
         # Normalize with softmax
         alpha = F.softmax(scores, dim=-1)
 
         # Since we do not use current timestep, first row of alpha will be NaN
         alpha = zero_first(alpha)
-
-        if self.recency_bias:
-            raise NotImplementedError
 
         # Take weighted average
         matched_seq = alpha.bmm(y)
