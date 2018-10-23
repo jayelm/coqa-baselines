@@ -422,18 +422,27 @@ class DialogSeqAttnMatch(nn.Module):
             q_markers = onehot_markers(xq_emb, 3, 1, cuda=self.cuda)
             d_markers = onehot_markers(xd_emb, 3, 2, cuda=self.cuda)
 
-            xa_emb = torch.cat((xa_emb, a_markers), 2)
-            xq_emb = torch.cat((xq_emb, q_markers), 2)
-            xd_emb = torch.cat((xd_emb, d_markers), 2)
+            xa_emb_m = torch.cat((xa_emb, a_markers), 2)
+            xq_emb_m = torch.cat((xq_emb, q_markers), 2)
+            xd_emb_m = torch.cat((xd_emb, d_markers), 2)
 
-        xdialog_emb = torch.cat((xq_emb, xa_emb), 1)
+        xdialog_emb_m = torch.cat((xq_emb_m, xa_emb_m), 1)
         xdialog_mask = torch.cat((xq_mask, xa_mask), 1)
 
-        max_dialog_len = xdialog_emb.shape[1]
+        max_dialog_len = xdialog_emb_m.shape[1]
         # Reshape by unraveling dialog history and repeating it across the
         # batch
-        xdialog_emb_flat = xdialog_emb.view(-1, xdialog_emb.shape[2])
-        xdialog_emb_tiled = xdialog_emb_flat.expand(xdialog_emb.shape[0], -1, -1).contiguous()
+        xdialog_emb_m_flat = xdialog_emb_m.view(-1, xdialog_emb_m.shape[2])
+        xdialog_emb_m_tiled = xdialog_emb_m_flat.expand(xdialog_emb_m.shape[0], -1, -1).contiguous()
+        if self.answer_marker_features:
+            # Create original version of xdialog, since we need the output to
+            # be of original size
+            xdialog_emb_o = torch.cat((xq_emb, xa_emb), 1)
+            xdialog_emb_o_flat = xdialog_emb_o.view(-1, xdialog_emb_o.shape[2])
+            xdialog_emb_o_tiled = xdialog_emb_o_flat.expand(xdialog_emb_o.shape[0], -1, -1).contiguous()
+        else:
+            xdialog_emb_o_tiled = xdialog_emb_m_tiled
+
         xdialog_mask_flat = xdialog_mask.view(-1)
         # Don't expand here; we will modify rows separately!
         xdialog_mask_tiled = xdialog_mask_flat.unsqueeze(0).repeat(xdialog_mask.shape[0], 1)
@@ -442,17 +451,17 @@ class DialogSeqAttnMatch(nn.Module):
         # max_dialog_len times, thus masking entire sequences of dialog
         # corresponding to future and (optionally) current timesteps.
         dialog_scores_mask = make_dialog_scores_mask(
-            (xdialog_emb.shape[0], xdialog_emb.shape[0]),
+            (xdialog_emb_m.shape[0], xdialog_emb_m.shape[0]),
             max_dialog_len, use_current_timestep=False,
             cuda=self.cuda)
 
         assert xdialog_mask_tiled.shape == dialog_scores_mask.shape
-        assert xdialog_emb_tiled.shape[:2] == dialog_scores_mask.shape
+        assert xdialog_emb_m_tiled.shape[:2] == dialog_scores_mask.shape
         xdialog_mask_tiled.masked_fill_(dialog_scores_mask, 1)
 
-        return self.seqattnmatch_forward(xd_emb, xdialog_emb_tiled, xdialog_mask_tiled, max_dialog_len)
+        return self.seqattnmatch_forward(xd_emb_m, xdialog_emb_m_tiled, xdialog_emb_o_tiled, xdialog_mask_tiled, max_dialog_len)
 
-    def seqattnmatch_forward(self, x, y, y_mask, max_dialog_len):
+    def seqattnmatch_forward(self, x, y, y_orig, y_mask, max_dialog_len):
         """
         This is directly taken from seqattnmatch
         """
@@ -490,7 +499,7 @@ class DialogSeqAttnMatch(nn.Module):
         alpha = zero_first(alpha)
 
         # Take weighted average
-        matched_seq = alpha.bmm(y)
+        matched_seq = alpha.bmm(y_orig)
         return matched_seq                      # (batch, len2, h)
 
 
