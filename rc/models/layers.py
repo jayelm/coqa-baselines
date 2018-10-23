@@ -432,6 +432,14 @@ class DialogSeqAttnMatch(nn.Module):
             xa_emb = torch.cat((xa_emb, a_markers), 2)
             xq_emb = torch.cat((xq_emb, q_markers), 2)
 
+            # Also add 0s to document embs.
+            d_markers = torch.zeros(xd_emb.shape[:2],
+                                    dtype=torch.float32, requires_grad=False)
+            if self.cuda:
+                d_markers = d_markers.cuda()
+            d_markers = d_markers.unsqueeze(2)
+            xd_emb = torch.cat((xd_emb, d_markers), 2)
+
         xdialog_emb = torch.cat((xq_emb, xa_emb), 1)
         xdialog_mask = torch.cat((xq_mask, xa_mask), 1)
 
