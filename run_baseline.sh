@@ -11,7 +11,8 @@ python rc/main.py --trainset data/coqa/coqa-train-v1.0-processed.json --devset d
     --use_history_qhidden false --qhidden_attn word \
     --use_history_qemb false --qemb_attn qhidden \
     --use_history_aemb false --aemb_attn qhidden \
-    --use_history_dialog true --dialog_attn word \
+    --doc_dialog_history true --doc_dialog_attn word \
+    --q_dialog_history true --q_dialog_attn word \
     --history_dialog_answer_f false \
     --history_dialog_time_f false \
-    --recency_bias false
+    --recency_bias true

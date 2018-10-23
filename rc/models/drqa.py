@@ -252,7 +252,6 @@ class DrQA(nn.Module):
         qrnn_input = xq_emb
 
         if self.config['q_dialog_history']:
-            import ipdb; ipdb.set_trace()
             xdialog_weighted_emb_q = self.q_dialog_match(xq_emb,
                                                          xq_emb, xa_emb,
                                                          xq_mask, xa_mask)
