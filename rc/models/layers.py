@@ -320,6 +320,17 @@ def make_scores_mask(scores_shape, use_current_timestep=True, cuda=False):
     return scores_mask
 
 
+def make_dialog_scores_mask(scores_shape, max_qa_len, use_current_timestep=True,
+                            cuda=False):
+    reg_mask = np.triu(np.ones(scores_shape, dtype=np.uint8),
+                       k=1 if use_current_timestep else 0)
+    repeated_mask = np.repeat(reg_mask, max_qa_len).reshape((scores_shape[0], -1))
+    repeated_mask = torch.tensor(repeated_mask, requires_grad=False)
+    if cuda:
+        repeated_mask = repeated_mask.cuda()
+    return repeated_mask
+
+
 def make_recency_weights(scores_mask, recency_weight, cuda=False):
     """
     Create a recency weights mask from the given scores mask and recency weight.
@@ -338,6 +349,107 @@ def make_recency_weights(scores_mask, recency_weight, cuda=False):
     recency_weights = recency_weight * recency_weights
 
     return recency_weights
+
+
+class DialogSeqAttnMatch(nn.Module):
+    """
+    Like SeqAttnMatch, but operates on dialog history. Prevents time travel and
+    optionally enables recency bias.
+    """
+    def __init__(self, input_size, identity=False,
+                 cuda=False, recency_bias=False, answer_marker_features=False,
+                 time_features=False):
+        super(DialogSeqAttnMatch, self).__init__()
+        if not identity:
+            self.linear = nn.Linear(input_size, input_size)
+        else:
+            self.linear = None
+
+        self.cuda = cuda
+        self.recency_bias = recency_bias
+        if recency_bias:
+            self.recency_weight = nn.Parameter(torch.full((1, ), -0.1))
+
+        self.answer_marker_features = answer_marker_features
+        if answer_marker_features:
+            raise NotImplementedError
+        self.time_features = time_features
+        if time_features:
+            raise NotImplementedError
+
+    def forward(self, xd_emb, xdialog_emb, xdialog_mask):
+        """Input shapes:
+            xd_emb = batch * len1 * h  (document)
+            xdialog_emb = batch * (max_qa_len = max_q_len + max_a_len) * h  (dialog)
+            xdialog_mask = batch * (max_qa_len = max_q_len + max_a_len)  (dialog mask)
+        Output shapes:
+            matched_seq = batch * len1 * h
+
+        SPECIFICALLY, xdialog_emb is just the result of concatting the question
+        and answer embeddings together (along dimension 1). Same goes for
+        xdialog_mask (no problem re: padding in the middle due to
+        max_q_len/max_a_len)
+
+        This function does reshaping to compute history over this entire dialog
+        for each document in xd_emb.
+        differentiate between answers and
+        """
+        max_dialog_len = xdialog_emb.shape[1]
+        # Reshape by unraveling dialog history and repeating it across the
+        # batch
+        xdialog_emb_flat = xdialog_emb.view(-1, xdialog_emb.shape[2])
+        xdialog_emb_tiled = xdialog_emb_flat.expand(xdialog_emb.shape[0], -1, -1).contiguous()
+        xdialog_mask_flat = xdialog_mask.view(-1)
+        # Don't expand here; we will modify rows separately!
+        xdialog_mask_tiled = xdialog_mask_flat.unsqueeze(0).repeat(xdialog_mask.shape[0], 1)
+
+        # This is an upper triangular matrix but each element is repeated
+        # max_dialog_len times, thus masking entire sequences of dialog
+        # corresponding to future and (optionally0 current timesteps.
+        dialog_scores_mask = make_dialog_scores_mask(
+            (xdialog_emb.shape[0], xdialog_emb.shape[0]),
+            max_dialog_len, use_current_timestep=False,
+            cuda=self.cuda)
+
+        assert xdialog_mask_tiled.shape == dialog_scores_mask.shape
+        assert xdialog_emb_tiled.shape[:2] == dialog_scores_mask.shape
+        xdialog_mask_tiled.masked_fill_(dialog_scores_mask, 1)
+
+        return self.seqattnmatch_forward(xd_emb, xdialog_emb_tiled, xdialog_mask_tiled)
+
+    def seqattnmatch_forward(self, x, y, y_mask):
+        """
+        This is directly taken from seqattnmatch
+        """
+        # Project vectors
+        if self.linear:
+            x_proj = self.linear(x.view(-1, x.size(2))).view(x.size())
+            x_proj = F.relu(x_proj)
+            y_proj = self.linear(y.view(-1, y.size(2))).view(y.size())
+            y_proj = F.relu(y_proj)
+        else:
+            x_proj = x
+            y_proj = y
+
+        # Compute scores
+        scores = x_proj.bmm(y_proj.transpose(2, 1))  # (batch, len1, len2)
+
+        # Mask padding
+        y_mask = y_mask.unsqueeze(1).expand(scores.size())  # (batch, len1, len2)
+        scores.masked_fill_(y_mask, -float('inf'))
+
+        # Normalize with softmax
+        alpha = F.softmax(scores, dim=-1)
+
+        # Since we do not use current timestep, first row of alpha will be NaN
+        alpha = zero_first(alpha)
+
+        if self.recency_bias:
+            raise NotImplementedError
+
+        # Take weighted average
+        matched_seq = alpha.bmm(y)
+        return matched_seq                      # (batch, len2, h)
 
 
 class SeqAttnMatch(nn.Module):

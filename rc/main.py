@@ -89,6 +89,11 @@ def get_args():
     group.add_argument('--use_history_aemb', type=str2bool, default=False, help='Whether to add historical averages of answer embeddings.')
     group.add_argument('--aemb_attn', type=str, choices=['qhidden', 'qemb', 'qa_sentence', 'qa_sentence_bi', 'q_sentence', 'word'],
                        default='qhidden', help='How to compute attention over historical answer alignments')
+    group.add_argument('--use_history_dialog', type=str2bool, default=False, help='Whether to add historical averages of dialog (question AND answer tokens).')
+    group.add_argument('--dialog_attn', type=str, choices=['word'],
+                       default='word', help='How to compute attention over past dialog (word = ignore differences between qs and as)')
+    group.add_argument('--history_dialog_answer_f', type=str2bool, default=False, help='Whether to add features distinguishing questions vs answers in historical dialog history.')
+    group.add_argument('--history_dialog_time_f', type=str2bool, default=False, help='Whether to add features distinguishing timestep in historical dialog history (may overlap with recency_bias)')
     group.add_argument('--answer_merge', type=str, choices=['avg', 'self_attn'],
                        default='self_attn', help='How to merge (historical) answers')
     group.add_argument('--recency_bias', type=str2bool, default=False,

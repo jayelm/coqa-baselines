@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from .layers import SeqAttnMatch, StackedBRNN, LinearSeqAttn, BilinearSeqAttn, SentenceHistoryAttn, QAHistoryAttn, QAHistoryAttnBilinear
+from .layers import SeqAttnMatch, StackedBRNN, LinearSeqAttn, BilinearSeqAttn, SentenceHistoryAttn, QAHistoryAttn, QAHistoryAttnBilinear, DialogSeqAttnMatch
 from .layers import weighted_avg, uniform_weights, dropout
 
 
@@ -23,15 +23,26 @@ class DrQA(nn.Module):
                 p.requires_grad = False
 
         # Whether we need to encode answer information
-        # FIXME: Is it really necessary to throw things into an answer encoder?
-        self.encode_answer = any(config[cfg] in ('qa_sentence', 'qa_sentence_bi') for cfg in
-                                 ['qhidden_attn', 'qemb_attn', 'aemb_attn'])
+        self.concat_qa = any(config[cfg] for cfg in
+                             ['use_history_dialog'])
+        # USE ANSWER: whether we need to use raw answer embeddings
+        self.use_answer = self.concat_qa
+        # ENCODE ANSWER: whether we actually need to encode the answer
+        # embeddings with a BiLSTM.
+        self.encode_answer = any(config[cfg + '_attn'] in ('qa_sentence', 'qa_sentence_bi') and config['use_history_' + cfg] for cfg in
+                                 ['qhidden', 'qemb', 'aemb'])
 
         # Projection for attention weighted question
         if self.config['use_qemb']:
             self.qemb_match = SeqAttnMatch(input_w_dim)
         if self.encode_answer:
             self.aemb_match = SeqAttnMatch(input_w_dim)
+        if self.config['use_history_dialog']:
+            self.dialog_match = DialogSeqAttnMatch(input_w_dim,
+                                                   recency_bias=self.config['recency_bias'],
+                                                   cuda=self.config['cuda'],
+                                                   answer_marker_features=self.config['history_dialog_answer_f'],
+                                                   time_features=self.config['history_dialog_time_f'])
 
         # Input size to RNN: word emb + question emb + manual features
         doc_input_size = input_w_dim + self.config['num_features']
@@ -46,6 +57,9 @@ class DrQA(nn.Module):
             if self.config['use_history_aemb']:
                 # Additional historical answer features
                 # FIXME: Same here!
+                doc_input_size += input_w_dim
+            if self.config['use_history_dialog']:
+                # Additional historical dialog features
                 doc_input_size += input_w_dim
 
         # Project document and question to the same size as their encoders
@@ -207,22 +221,25 @@ class DrQA(nn.Module):
         xd_mask = document padding mask        (batch, max_d_len)
         targets = span targets                 (batch,)
         """
-
         # Embed both document and question
         xq_emb = self.w_embedding(ex['xq'])                         # (batch, max_q_len, word_embed)
         xd_emb = self.w_embedding(ex['xd'])                         # (batch, max_d_len, word_embed)
-        if self.encode_answer:
+        if self.use_answer:
             xa_emb = self.w_embedding(ex['xa'])
+            if self.concat_qa:
+                xdialog_emb = torch.cat((xq_emb, xa_emb), 1)
 
         shared_axes = [2] if self.config['word_dropout'] else []
         xq_emb = dropout(xq_emb, self.config['dropout_emb'], shared_axes=shared_axes, training=self.training)
         xd_emb = dropout(xd_emb, self.config['dropout_emb'], shared_axes=shared_axes, training=self.training)
-        if self.encode_answer:
+        if self.use_answer:
             xa_emb = dropout(xa_emb, self.config['dropout_emb'], shared_axes=shared_axes, training=self.training)
         xd_mask = ex['xd_mask']
         xq_mask = ex['xq_mask']
-        if self.encode_answer:
+        if self.use_answer:
             xa_mask = ex['xa_mask']
+            if self.concat_qa:
+                xdialog_mask = torch.cat((xq_mask, xa_mask), 1)
 
         # Encode question with RNN + merge hiddens
         question_hiddens = self.question_rnn(xq_emb, xq_mask)
@@ -304,6 +321,13 @@ class DrQA(nn.Module):
             )
             # XXX: Same here!
             drnn_input = torch.cat([drnn_input, xa_history_weighted_emb], 2)
+
+        if self.config['use_history_dialog']:
+            xdialog_weighted_emb = self.dialog_match(xd_emb,
+                                                     xdialog_emb,
+                                                     xdialog_mask)
+            drnn_input = torch.cat((drnn_input, xdialog_weighted_emb), 2)
+
 
         if self.config["num_features"] > 0:
             drnn_input = torch.cat([drnn_input, ex['xd_f']], 2)
