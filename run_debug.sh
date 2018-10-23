@@ -10,5 +10,5 @@ python rc/main.py --trainset data/coqa/coqa-train-v1.0-processed.json --devset d
     --use_history_aemb false --aemb_attn qemb \
     --use_history_dialog true --dialog_attn word \
     --recency_bias true \
-    --history_dialog_answer_f false \
+    --history_dialog_answer_f true \
     --history_dialog_time_f false

@@ -226,8 +226,6 @@ class DrQA(nn.Module):
         xd_emb = self.w_embedding(ex['xd'])                         # (batch, max_d_len, word_embed)
         if self.use_answer:
             xa_emb = self.w_embedding(ex['xa'])
-            if self.concat_qa:
-                xdialog_emb = torch.cat((xq_emb, xa_emb), 1)
 
         shared_axes = [2] if self.config['word_dropout'] else []
         xq_emb = dropout(xq_emb, self.config['dropout_emb'], shared_axes=shared_axes, training=self.training)
@@ -238,8 +236,6 @@ class DrQA(nn.Module):
         xq_mask = ex['xq_mask']
         if self.use_answer:
             xa_mask = ex['xa_mask']
-            if self.concat_qa:
-                xdialog_mask = torch.cat((xq_mask, xa_mask), 1)
 
         # Encode question with RNN + merge hiddens
         question_hiddens = self.question_rnn(xq_emb, xq_mask)
@@ -324,8 +320,8 @@ class DrQA(nn.Module):
 
         if self.config['use_history_dialog']:
             xdialog_weighted_emb = self.dialog_match(xd_emb,
-                                                     xdialog_emb,
-                                                     xdialog_mask)
+                                                     xq_emb, xa_emb,
+                                                     xq_mask, xa_mask)
             drnn_input = torch.cat((drnn_input, xdialog_weighted_emb), 2)
 
 

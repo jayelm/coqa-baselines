@@ -380,10 +380,6 @@ class DialogSeqAttnMatch(nn.Module):
                  cuda=False, recency_bias=False, answer_marker_features=False,
                  time_features=False):
         super(DialogSeqAttnMatch, self).__init__()
-        if not identity:
-            self.linear = nn.Linear(input_size, input_size)
-        else:
-            self.linear = None
 
         self.cuda = cuda
         self.recency_bias = recency_bias
@@ -391,13 +387,19 @@ class DialogSeqAttnMatch(nn.Module):
             self.recency_weight = nn.Parameter(torch.full((1, ), -0.1))
 
         self.answer_marker_features = answer_marker_features
-        if answer_marker_features:
-            raise NotImplementedError
         self.time_features = time_features
-        if time_features:
-            raise NotImplementedError
 
-    def forward(self, xd_emb, xdialog_emb, xdialog_mask):
+        true_input_size = input_size
+        if self.answer_marker_features:
+            true_input_size += 1
+        if self.time_features:
+            raise NotImplementedError
+        if not identity:
+            self.linear = nn.Linear(true_input_size, input_size)
+        else:
+            self.linear = None
+
+    def forward(self, xd_emb, xq_emb, xa_emb, xq_mask, xa_mask):
         """Input shapes:
             xd_emb = batch * len1 * h  (document)
             xdialog_emb = batch * (max_qa_len = max_q_len + max_a_len) * h  (dialog)
@@ -414,6 +416,25 @@ class DialogSeqAttnMatch(nn.Module):
         for each document in xd_emb.
         differentiate between answers and
         """
+        if self.answer_marker_features:
+            # Add 1s to mark answers, else 0
+            a_markers = torch.ones(xa_emb.shape[:2],
+                                   dtype=torch.float32, requires_grad=False)
+            if self.cuda:
+                a_markers = a_markers.cuda()
+            a_markers = a_markers.unsqueeze(2)
+            q_markers = torch.zeros(xq_emb.shape[:2],
+                                    dtype=torch.float32, requires_grad=False)
+            if self.cuda:
+                q_markers = q_markers.cuda()
+            q_markers = q_markers.unsqueeze(2)
+
+            xa_emb = torch.cat((xa_emb, a_markers), 2)
+            xq_emb = torch.cat((xq_emb, q_markers), 2)
+
+        xdialog_emb = torch.cat((xq_emb, xa_emb), 1)
+        xdialog_mask = torch.cat((xq_mask, xa_mask), 1)
+
         max_dialog_len = xdialog_emb.shape[1]
         # Reshape by unraveling dialog history and repeating it across the
         # batch
@@ -425,7 +446,7 @@ class DialogSeqAttnMatch(nn.Module):
 
         # This is an upper triangular matrix but each element is repeated
         # max_dialog_len times, thus masking entire sequences of dialog
-        # corresponding to future and (optionally0 current timesteps.
+        # corresponding to future and (optionally) current timesteps.
         dialog_scores_mask = make_dialog_scores_mask(
             (xdialog_emb.shape[0], xdialog_emb.shape[0]),
             max_dialog_len, use_current_timestep=False,
