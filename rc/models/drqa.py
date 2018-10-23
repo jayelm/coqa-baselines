@@ -17,16 +17,15 @@ class DrQA(nn.Module):
         self.w_embedding = w_embedding
         input_w_dim = self.w_embedding.embedding_dim
         q_input_size = input_w_dim
+        if self.config['q_dialog_history']:
+            q_input_size += input_w_dim
         a_input_size = input_w_dim
         if self.config['fix_embeddings']:
             for p in self.w_embedding.parameters():
                 p.requires_grad = False
 
-        # Whether we need to encode answer information
-        self.concat_qa = any(config[cfg] for cfg in
-                             ['use_history_dialog'])
         # USE ANSWER: whether we need to use raw answer embeddings
-        self.use_answer = self.concat_qa
+        self.use_answer = any(config[cfg] for cfg in ['doc_dialog_history', 'q_dialog_history'])
         # ENCODE ANSWER: whether we actually need to encode the answer
         # embeddings with a BiLSTM.
         self.encode_answer = any(config[cfg + '_attn'] in ('qa_sentence', 'qa_sentence_bi') and config['use_history_' + cfg] for cfg in
@@ -37,12 +36,25 @@ class DrQA(nn.Module):
             self.qemb_match = SeqAttnMatch(input_w_dim)
         if self.encode_answer:
             self.aemb_match = SeqAttnMatch(input_w_dim)
-        if self.config['use_history_dialog']:
-            self.dialog_match = DialogSeqAttnMatch(input_w_dim,
-                                                   recency_bias=self.config['recency_bias'],
-                                                   cuda=self.config['cuda'],
-                                                   answer_marker_features=self.config['history_dialog_answer_f'],
-                                                   time_features=self.config['history_dialog_time_f'])
+        if self.config['doc_dialog_history']:
+            self.doc_dialog_match = DialogSeqAttnMatch(input_w_dim,
+                                                       recency_bias=self.config['recency_bias'],
+                                                       cuda=self.config['cuda'],
+                                                       answer_marker_features=self.config['history_dialog_answer_f'],
+                                                       time_features=self.config['history_dialog_time_f'])
+        if self.config['q_dialog_history']:
+            if self.config['q_dialog_attn'] == 'doc':
+                self.q_dialog_match = self.doc_dialog_match
+            elif self.config['q_dialog_attn'] == 'word':
+                # May be advantageous to have separate attention mechanisms, as
+                # a question-based one is probably more about resolving coref.
+                self.q_dialog_match = DialogSeqAttnMatch(input_w_dim,
+                                                         recency_bias=self.config['recency_bias'],
+                                                         cuda=self.config['cuda'],
+                                                         answer_marker_features=self.config['history_dialog_answer_f'],
+                                                         time_features=self.config['history_dialog_time_f'])
+            else:
+                raise NotImplementedError("q_dialog_attn = {}".format(self.config['q_dialog_attn']))
 
         # Input size to RNN: word emb + question emb + manual features
         doc_input_size = input_w_dim + self.config['num_features']
@@ -58,7 +70,7 @@ class DrQA(nn.Module):
                 # Additional historical answer features
                 # FIXME: Same here!
                 doc_input_size += input_w_dim
-            if self.config['use_history_dialog']:
+            if self.config['doc_dialog_history']:
                 # Additional historical dialog features
                 doc_input_size += input_w_dim
 
@@ -128,10 +140,10 @@ class DrQA(nn.Module):
             doc_hidden_size = doc_hidden_size + question_hidden_size
 
         # Question merging
-        if config['question_merge'] not in ['avg', 'self_attn']:
-            raise NotImplementedError('question_merge = %s' % config['question_merge'])
         if config['question_merge'] == 'self_attn':
             self.self_attn = LinearSeqAttn(question_hidden_size)
+        else:
+            raise NotImplementedError('question_merge = %s' % config['question_merge'])
 
         # Answer merging
         if self.encode_answer:
@@ -237,8 +249,17 @@ class DrQA(nn.Module):
         if self.use_answer:
             xa_mask = ex['xa_mask']
 
+        qrnn_input = xq_emb
+
+        if self.config['q_dialog_history']:
+            import ipdb; ipdb.set_trace()
+            xdialog_weighted_emb_q = self.q_dialog_match(xq_emb,
+                                                         xq_emb, xa_emb,
+                                                         xq_mask, xa_mask)
+            qrnn_input = torch.cat((qrnn_input, xdialog_weighted_emb_q), 2)
+
         # Encode question with RNN + merge hiddens
-        question_hiddens = self.question_rnn(xq_emb, xq_mask)
+        question_hiddens = self.question_rnn(qrnn_input, xq_mask)
         if self.config['question_merge'] == 'avg':
             q_merge_weights = uniform_weights(question_hiddens, xq_mask)
         elif self.config['question_merge'] == 'self_attn':
@@ -318,11 +339,11 @@ class DrQA(nn.Module):
             # XXX: Same here!
             drnn_input = torch.cat([drnn_input, xa_history_weighted_emb], 2)
 
-        if self.config['use_history_dialog']:
-            xdialog_weighted_emb = self.dialog_match(xd_emb,
-                                                     xq_emb, xa_emb,
-                                                     xq_mask, xa_mask)
-            drnn_input = torch.cat((drnn_input, xdialog_weighted_emb), 2)
+        if self.config['doc_dialog_history']:
+            xdialog_weighted_emb_d = self.doc_dialog_match(xd_emb,
+                                                           xq_emb, xa_emb,
+                                                           xq_mask, xa_mask)
+            drnn_input = torch.cat((drnn_input, xdialog_weighted_emb_d), 2)
 
 
         if self.config["num_features"] > 0:

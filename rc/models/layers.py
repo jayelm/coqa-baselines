@@ -425,6 +425,10 @@ class DialogSeqAttnMatch(nn.Module):
             xa_emb_m = torch.cat((xa_emb, a_markers), 2)
             xq_emb_m = torch.cat((xq_emb, q_markers), 2)
             xd_emb_m = torch.cat((xd_emb, d_markers), 2)
+        else:
+            xa_emb_m = xa_emb
+            xq_emb_m = xq_emb
+            xd_emb_m = xd_emb
 
         xdialog_emb_m = torch.cat((xq_emb_m, xa_emb_m), 1)
         xdialog_mask = torch.cat((xq_mask, xa_mask), 1)
