@@ -391,7 +391,7 @@ class DialogSeqAttnMatch(nn.Module):
 
         true_input_size = input_size
         if self.answer_marker_features:
-            true_input_size += 1
+            true_input_size += 3
         if self.time_features:
             raise NotImplementedError
         if not identity:
@@ -418,26 +418,12 @@ class DialogSeqAttnMatch(nn.Module):
         """
         if self.answer_marker_features:
             # Add 1s to mark answers, else 0
-            a_markers = torch.ones(xa_emb.shape[:2],
-                                   dtype=torch.float32, requires_grad=False)
-            if self.cuda:
-                a_markers = a_markers.cuda()
-            a_markers = a_markers.unsqueeze(2)
-            q_markers = torch.zeros(xq_emb.shape[:2],
-                                    dtype=torch.float32, requires_grad=False)
-            if self.cuda:
-                q_markers = q_markers.cuda()
-            q_markers = q_markers.unsqueeze(2)
+            a_markers = onehot_markers(xa_emb, 3, 0, cuda=self.cuda)
+            q_markers = onehot_markers(xq_emb, 3, 1, cuda=self.cuda)
+            d_markers = onehot_markers(xd_emb, 3, 2, cuda=self.cuda)
 
             xa_emb = torch.cat((xa_emb, a_markers), 2)
             xq_emb = torch.cat((xq_emb, q_markers), 2)
-
-            # Also add 0s to document embs.
-            d_markers = torch.zeros(xd_emb.shape[:2],
-                                    dtype=torch.float32, requires_grad=False)
-            if self.cuda:
-                d_markers = d_markers.cuda()
-            d_markers = d_markers.unsqueeze(2)
             xd_emb = torch.cat((xd_emb, d_markers), 2)
 
         xdialog_emb = torch.cat((xq_emb, xa_emb), 1)
@@ -472,9 +458,9 @@ class DialogSeqAttnMatch(nn.Module):
         """
         # Project vectors
         if self.linear:
-            x_proj = self.linear(x.view(-1, x.size(2))).view(x.size())
+            x_proj = self.linear(x.view(-1, x.size(2))).view((x.shape[:2] + (-1, )))
             x_proj = F.relu(x_proj)
-            y_proj = self.linear(y.view(-1, y.size(2))).view(y.size())
+            y_proj = self.linear(y.view(-1, y.size(2))).view((y.shape[:2] + (-1, )))
             y_proj = F.relu(y_proj)
         else:
             x_proj = x
@@ -641,3 +627,36 @@ def zero_first(arr):
     zeros = torch.zeros_like(arr[0], requires_grad=False).unsqueeze(0)
     arr_new = torch.cat([zeros, arr_rest], 0)
     return arr_new
+
+
+def onehot_markers(emb, n_total, n_on, cuda=False):
+    """
+    Make one-hot marker features of the same shape as emb, but with n_total features
+
+    Input:
+        emb: batch x len x h
+    Output:
+        markers: batch x len x n_total
+
+    Where only the "n_on"th element of n_total is one, else zero
+    """
+    if n_on > (n_total - 1):
+        raise IndexErrror("One-hot index {} out of bounds given {} options".format(
+            n_on, n_total
+        ))
+
+    ones_markers = torch.ones(emb.shape[:2], dtype=torch.float32,
+                              requires_grad=False).unsqueeze(2)
+    zeros_markers = torch.zeros(emb.shape[:2], dtype=torch.float32,
+                                requires_grad=False).unsqueeze(2)
+    if cuda:
+        ones_markers = ones_markers.cuda()
+        zeros_markers = zeros_markers.cuda()
+    markers_list = []
+    for i in range(n_total):
+        if i == n_on:
+            markers_list.append(ones_markers)
+        else:
+            markers_list.append(zeros_markers)
+
+    return torch.cat(markers_list, 2)
