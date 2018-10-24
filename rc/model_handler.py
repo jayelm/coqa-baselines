@@ -18,8 +18,6 @@ class ModelHandler(object):
     """
 
     def __init__(self, config):
-        if config['dialog_batched'] and config['batch_size'] != 1:
-            raise ValueError("Must specify batch size == 1 with dialog batching")
         self.logger = ModelLogger(config, dirname=config['dir'], pretrained=config['pretrained'])
         self.dirname = self.logger.dirname
         cuda = config['cuda']
@@ -163,28 +161,34 @@ class ModelHandler(object):
         output = []
         for step, input_batch in enumerate(data_loader):
             if self.config['dialog_batched']:
-                input_batch = input_batch[0]
-                sanitizer = sanitize_input_dialog_batched
-                vectorizer = vectorize_input_dialog_batched
+                x_batches = []
+                for ib in input_batch:
+                    ib_sanitized = sanitize_input_dialog_batched(ib, self.config, self.model.word_dict,
+                                                                 self.model.feature_dict, training=training)
+                    x_batch = vectorize_input_dialog_batched(ib_sanitized, self.config, training=training,
+                                                             device=self.device)
+                    if not x_batch:
+                        continue  # When there are no target spans present in the batch
+                    x_batches.append(x_batch)
             else:
-                sanitizer = sanitize_input
-                vectorizer = vectorize_input
-            input_batch = sanitizer(input_batch, self.config, self.model.word_dict,
-                                    self.model.feature_dict, training=training)
-            x_batch = vectorizer(input_batch, self.config, training=training,
-                                 device=self.device)
-            if not x_batch:
-                continue  # When there are no target spans present in the batch
+                input_batch = sanitize_input(input_batch, self.config, self.model.word_dict,
+                                        self.model.feature_dict, training=training)
+                x_batch = vectorize_input(input_batch, self.config, training=training,
+                                     device=self.device)
+                if not x_batch:
+                    continue  # When there are no target spans present in the batch
+                x_batches = [x_batch]  # Singleton list.
 
-            res = self.model.predict(x_batch, update=training, out_predictions=out_predictions)
+            res = self.model.predict(x_batches, update=training, out_predictions=out_predictions)
 
             loss = res['loss']
             f1 = res['f1']
             em = res['em']
-            self._update_metrics(loss, f1, em, x_batch['batch_size'], training=training)
+            total_ex = sum(xb['batch_size'] for xb in x_batches)
+            self._update_metrics(loss, f1, em, total_ex, training=training)
 
             if training:
-                self._n_train_examples += x_batch['batch_size']
+                self._n_train_examples += total_ex
 
             if (verbose > 0) and (step % verbose == 0):
                 mode = "train" if training else ("test" if self.is_test else "dev")
@@ -221,7 +225,7 @@ class ModelHandler(object):
 
     def _update_metrics(self, loss, f1, em, batch_size, training=True):
         if training:
-            self._train_loss.update(loss)
+            self._train_loss.update(loss, batch_size)
             self._train_f1.update(f1 * 100, batch_size)
             self._train_em.update(em * 100, batch_size)
         else:

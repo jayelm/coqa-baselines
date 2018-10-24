@@ -136,6 +136,13 @@ def get_args():
         parser.error("Can't --use_history_aemb with --aemb_attn = 'qemb' if not --use_history_qemb. "
                      "Specify --aemb_attn separately or set --use_history_qemb")
 
+    if args['q_dialog_history'] and args['q_dialog_attn'] == 'doc' and not args['doc_dialog_history']:
+        parser.error("Can't use --q_dialog_history with --q_dialog_attn = 'doc' if not using --doc_dialog_history. "
+                     "Specify --q_dialog_attn separately or set --doc_dialog_history")
+
+    if args['dialog_batched'] and args['batch_size'] > 2:
+        print("WARNING: --dialog_batched and --batch_size = {}. Did you mean to set a large dialog batch size?".format(args['batch_Size']))
+
     return args
 
 

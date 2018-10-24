@@ -145,27 +145,56 @@ class Model(object):
         else:
             raise RuntimeError('Unsupported optimizer: %s' % self.config['optimizer'])
 
-    def predict(self, ex, update=True, out_predictions=False):
+    def predict(self, exs, update=True, out_predictions=False):
         # Train/Eval mode
         self.network.train(update)
-        # Run forward
-        res = self.network(ex)
-        score_s, score_e = res['score_s'], res['score_e']
+        running_loss_items = []
+        running_losses = []
+        f1s = []
+        ems = []
+        all_predictions = []
+        all_spans = []
+        ex_sizes = []
+        for ex in exs:
+            # Run forward
+            res = self.network(ex)
+            score_s, score_e = res['score_s'], res['score_e']
+
+            # Loss cannot be computed for test-time as we may not have targets
+            if update:
+                # Compute loss and accuracies
+                loss = self.compute_span_loss(score_s, score_e, res['targets'])
+                running_losses.append(loss)
+                running_loss_items.append(loss.item())
+
+            if (not update) or self.config['predict_train']:
+                predictions, spans = self.extract_predictions(ex, score_s, score_e)
+                this_f1, this_em = self.evaluate_predictions(predictions, ex['answers'])
+                f1s.append(this_f1)
+                ems.append(this_em)
+                ex_sizes.append(ex['batch_size'])
+                if out_predictions:
+                    all_predictions.append(predictions)
+                    all_spans.append(spans)
 
         output = {
-            'f1': 0.0,
-            'em': 0.0,
-            'loss': 0.0
+            # Do a weighted average of f1
+            'f1': weighted_score_avg(f1s, ex_sizes),
+            'em': weighted_score_avg(ems, ex_sizes),
+            'loss': sum(running_loss_items) / (2 * sum(ex_sizes))
         }
-        # Loss cannot be computed for test-time as we may not have targets
-        if update:
-            # Compute loss and accuracies
-            loss = self.compute_span_loss(score_s, score_e, res['targets'])
-            output['loss'] = loss.item()
 
+        if (not update) or self.config['predict_train']:
+            if out_predictions:
+                output['predictions'] = [item for sublist in all_predictions for item in sublist]
+                output['spans'] = [item for sublist in all_spans for item in sublist]
+
+        if update:
             # Clear gradients and run backward
             self.optimizer.zero_grad()
-            loss.backward()
+            # Batch size is 2x since we have start AND end spans
+            weighted_avg_loss = sum(running_losses) / (2 * sum(ex_sizes))
+            weighted_avg_loss.backward()
 
             # Clip gradients
             torch.nn.utils.clip_grad_norm_(self.network.parameters(), self.config['grad_clipping'])
@@ -173,20 +202,15 @@ class Model(object):
             # Update parameters
             self.optimizer.step()
 
-        if (not update) or self.config['predict_train']:
-            predictions, spans = self.extract_predictions(ex, score_s, score_e)
-            output['f1'], output['em'] = self.evaluate_predictions(predictions, ex['answers'])
-            if out_predictions:
-                output['predictions'] = predictions
-                output['spans'] = spans
         return output
 
     def compute_span_loss(self, score_s, score_e, targets):
         assert targets.size(0) == score_s.size(0) == score_e.size(0)
         if self.config['sum_loss']:
+            raise NotImplementedError("Make sure variable batch sizes works")
             loss = multi_nll_loss(score_s, targets[:, :, 0]) + multi_nll_loss(score_e, targets[:, :, 1])
         else:
-            loss = F.nll_loss(score_s, targets[:, 0]) + F.nll_loss(score_e, targets[:, 1])
+            loss = F.nll_loss(score_s, targets[:, 0], reduction='sum') + F.nll_loss(score_e, targets[:, 1], reduction='sum')
         return loss
 
     def extract_predictions(self, ex, score_s, score_e):
@@ -244,3 +268,8 @@ class Model(object):
             torch.save(params, os.path.join(dirname, Constants._SAVED_WEIGHTS_FILE))
         except BaseException:
             print('[ WARN: Saving failed... continuing anyway. ]')
+
+def weighted_score_avg(scores, weights):
+    total_weight = sum(weights)
+    weighted_scores = [s * w for s, w in zip(scores, weights)]
+    return sum(weighted_scores) / total_weight
