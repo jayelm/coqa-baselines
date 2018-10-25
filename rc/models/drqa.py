@@ -28,10 +28,18 @@ class DrQA(nn.Module):
         doc_hidden_size = 2 * config['hidden_size']
         question_hidden_size = 2 * config['hidden_size']
 
+        if config['concat_rnn_layers']:
+            doc_hidden_size *= config['num_layers']
+            question_hidden_size *= config['num_layers']
+
+        if config['doc_self_attn']:
+            self.doc_self_attn = SeqAttnMatch(doc_hidden_size)
+            doc_hidden_size = doc_hidden_size + question_hidden_size
+
         if self.config['q_dialog_history'] and self.config['q_dialog_attn'] == 'word_hidden':
             # Then question hidden reprs are augmented with attention weighted
-            # average of dialog hidden reprs
-            question_hidden_size += 2 * config['hidden_size']
+            # average of dialog hidden reprs (same encoder, same dimensionality)
+            question_hidden_size = 2 * question_hidden_size
 
         # USE ANSWER: whether we need to use raw answer embeddings
         self.use_answer = any(config[cfg] for cfg in ['doc_dialog_history', 'q_dialog_history'])
@@ -111,14 +119,6 @@ class DrQA(nn.Module):
             padding=config['rnn_padding'],
             bidirectional=True,
         )
-
-        if config['concat_rnn_layers']:
-            doc_hidden_size *= config['num_layers']
-            question_hidden_size *= config['num_layers']
-
-        if config['doc_self_attn']:
-            self.doc_self_attn = SeqAttnMatch(doc_hidden_size)
-            doc_hidden_size = doc_hidden_size + question_hidden_size
 
         # Question merging
         if config['question_merge'] == 'self_attn':
