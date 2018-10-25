@@ -7,6 +7,7 @@ import numpy as np
 
 from word_model import WordModel
 from utils.eval_utils import compute_eval_metric
+from utils.analysis_utils import write_attns_to_file
 from models.layers import multi_nll_loss
 from utils import constants as Constants
 from collections import Counter
@@ -145,7 +146,7 @@ class Model(object):
         else:
             raise RuntimeError('Unsupported optimizer: %s' % self.config['optimizer'])
 
-    def predict(self, exs, update=True, out_predictions=False):
+    def predict(self, exs, update=True, out_predictions=False, out_attentions=None):
         # Train/Eval mode
         self.network.train(update)
         running_loss_items = []
@@ -156,6 +157,10 @@ class Model(object):
         all_spans = []
         ex_sizes = []
         for ex in exs:
+            # Convey to the attn alyers that we want attention outputs by
+            # setting examples in ex
+            ex['out_attentions'] = out_attentions
+
             # Run forward
             res = self.network(ex)
             score_s, score_e = res['score_s'], res['score_e']
@@ -176,6 +181,11 @@ class Model(object):
                 if out_predictions:
                     all_predictions.append(predictions)
                     all_spans.append(spans)
+
+                if out_attentions:
+                    # Save attentions to file.
+                    fdir = os.path.join(self.config['pretrained'], 'attention')
+                    write_attns_to_file(ex, res['out_attentions'], fdir, self.rev_word_dict)
 
         output = {
             # Do a weighted average of f1

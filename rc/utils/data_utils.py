@@ -523,7 +523,8 @@ def vectorize_input_dialog_batched(batch, config, training=True, device=None):
         'xd': xd.to(device) if device else xd,
         'xd_mask': xd_mask.to(device) if device else xd_mask,
         'xd_f': xd_f.to(device) if device else xd_f,
-        'targets': targets.to(device) if device else targets
+        'targets': targets.to(device) if device else targets,
+        'id': batch['id']
     }
     if encode_dialog:
         example.update({

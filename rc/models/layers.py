@@ -399,7 +399,8 @@ class DialogSeqAttnMatch(nn.Module):
         else:
             self.linear = None
 
-    def forward(self, xd_emb, xq_emb, xa_emb, xq_mask, xa_mask):
+    def forward(self, xd_emb, xq_emb, xa_emb, xq_mask, xa_mask,
+                out_attention=False):
         """Input shapes:
             xd_emb = batch * len1 * h  (document)
             xdialog_emb = batch * (max_qa_len = max_q_len + max_a_len) * h  (dialog)
@@ -463,9 +464,9 @@ class DialogSeqAttnMatch(nn.Module):
         assert xdialog_emb_m_tiled.shape[:2] == dialog_scores_mask.shape
         xdialog_mask_tiled.masked_fill_(dialog_scores_mask, 1)
 
-        return self.seqattnmatch_forward(xd_emb_m, xdialog_emb_m_tiled, xdialog_emb_o_tiled, xdialog_mask_tiled, max_dialog_len)
+        return self.seqattnmatch_forward(xd_emb_m, xdialog_emb_m_tiled, xdialog_emb_o_tiled, xdialog_mask_tiled, max_dialog_len, out_attention=out_attention)
 
-    def seqattnmatch_forward(self, x, y, y_orig, y_mask, max_dialog_len):
+    def seqattnmatch_forward(self, x, y, y_orig, y_mask, max_dialog_len, out_attention=False):
         """
         This is directly taken from seqattnmatch
         """
@@ -504,6 +505,8 @@ class DialogSeqAttnMatch(nn.Module):
 
         # Take weighted average
         matched_seq = alpha.bmm(y_orig)
+        if out_attention:
+            return matched_seq, alpha
         return matched_seq                      # (batch, len2, h)
 
 
@@ -519,7 +522,8 @@ class SeqAttnMatch(nn.Module):
         else:
             self.linear = None
 
-    def forward(self, x, y, y_mask, recency_weights=None):
+    def forward(self, x, y, y_mask, recency_weights=None,
+                out_attention=False):
         """Input shapes:
             x = batch * len1 * h  (document)
             y = batch * len2 * h  (question)
@@ -553,6 +557,8 @@ class SeqAttnMatch(nn.Module):
 
         # Take weighted average
         matched_seq = alpha.bmm(y)
+        if out_attention:
+            return matched_seq, alpha
         return matched_seq                      # (batch, len2, h)
 
 

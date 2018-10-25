@@ -136,7 +136,8 @@ class ModelHandler(object):
         self._reset_metrics()
         timer = Timer("Test")
         output = self._run_epoch(self.test_loader, training=False, verbose=0,
-                                 out_predictions=self.config['out_predictions'])
+                                 out_predictions=self.config['out_predictions'],
+                                 out_attentions=self.config['save_attn_weights'])
 
         for ex in output:
             _id = ex['id']
@@ -156,7 +157,7 @@ class ModelHandler(object):
         self.logger.log([test_f1, test_em], Constants._TEST_EVAL_LOG)
         print("Finished Testing: {}".format(self.dirname))
 
-    def _run_epoch(self, data_loader, training=True, verbose=10, out_predictions=False):
+    def _run_epoch(self, data_loader, training=True, verbose=10, out_predictions=False, out_attentions=None):
         start_time = time.time()
         output = []
         for step, input_batch in enumerate(data_loader):
@@ -179,7 +180,7 @@ class ModelHandler(object):
                     continue  # When there are no target spans present in the batch
                 x_batches = [x_batch]  # Singleton list.
 
-            res = self.model.predict(x_batches, update=training, out_predictions=out_predictions)
+            res = self.model.predict(x_batches, update=training, out_predictions=out_predictions, out_attentions=out_attentions)
 
             loss = res['loss']
             f1 = res['f1']

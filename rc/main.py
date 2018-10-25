@@ -114,12 +114,32 @@ def get_args():
                        help='Whether to use raw text and offsets for prediction.')
     group.add_argument('--save_params', type=str2bool, default=True, help='Whether to save params.')
 
+    # Analysis
+    group = parser.add_argument_group('analysis_spec', 'Options for analysis')
+    group.add_argument('--save_attn_weights', nargs='*', choices=['q_dialog_attn', 'doc_dialog_attn'],
+                       help='Which attention weights to save')
+
     args = vars(parser.parse_args())
 
     # Check that attention settings are compatible
     if args['doc_dialog_history'] and args['doc_dialog_attn'] == 'q' and not args['q_dialog_history']:
         parser.error("Can't use --doc_dialog_history with --doc_dialog_attn = 'q' if not using --q_dialog_history. "
                      "Specify --doc_dialog_attn separately or set --q_dialog_history")
+
+    # Check analysis args
+    if not args['pretrained']:
+        for analysis_arg in ['save_attn_weights']:
+            if args[analysis_arg]:
+                parser.error("Must specify --pretrained model with analysis argument --{}".format(analysis_arg))
+
+    # Check if analysis args analyze parts of the model that are actually used
+    if args['save_attn_weights'] is not None:
+        for attn_opt in args['save_attn_weights']:
+            use_attn_opt = attn_opt.replace('_attn', '_history')
+            if not (args[use_attn_opt]):
+                parser.error("Must set --{} if wanting to analyze {}".format(use_attn_opt, attn_opt))
+            if args[attn_opt] not in ['word_hidden']:
+                raise NotImplementedError("Analyzing {} attention".format(args[attn_opt]))
 
     if args['dialog_batched'] and args['batch_size'] > 2:
         print("WARNING: --dialog_batched and --batch_size = {}. Did you mean to set a large dialog batch size?".format(args['batch_Size']))

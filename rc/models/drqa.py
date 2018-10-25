@@ -70,7 +70,7 @@ class DrQA(nn.Module):
         if self.config['doc_dialog_history']:
             if self.config['doc_dialog_attn'] == 'q':
                 self.doc_dialog_match = self.q_dialog_match
-            if self.config['doc_dialog_attn'] == 'word_emb':
+            elif self.config['doc_dialog_attn'] == 'word_emb':
                 # May be advantageous to have separate attention mechanisms, as
                 # a question-based one is probably more concerned with resolving coref.
                 self.doc_dialog_match = DialogSeqAttnMatch(input_w_dim,
@@ -78,8 +78,11 @@ class DrQA(nn.Module):
                                                            cuda=self.config['cuda'],
                                                            answer_marker_features=self.config['history_dialog_answer_f'],
                                                            time_features=self.config['history_dialog_time_f'])
+            elif self.config['doc_dialog_attn'] == 'word_hidden':
+                # TODO: What do we do here - concat doc hiddens?
+                raise NotImplementedError("doc_dialog_attn = word_hidden")
             else:
-                raise NotImplemented("doc_dialog_attn = {}".format(self.config['doc_dialog_attn']))
+                raise NotImplementedError("doc_dialog_attn = {}".format(self.config['doc_dialog_attn']))
 
         # Input size to RNN: word emb + question emb + manual features
         doc_input_size = input_w_dim + self.config['num_features']
@@ -163,13 +166,25 @@ class DrQA(nn.Module):
         if self.use_answer:
             xa_mask = ex['xa_mask']
 
+        # Save attentions
+        if ex['out_attentions']:
+            out_attentions = {}
+
         # ==== QUESTION ====
         qrnn_input = xq_emb
         # Augment question RNN input with attention over dialog history
         if self.config['q_dialog_history'] and self.config['q_dialog_attn'] == 'word_emb':
-            xdialog_weighted_emb_q = self.q_dialog_match(xq_emb,
-                                                         xq_emb, xa_emb,
-                                                         xq_mask, xa_mask)
+            if ex['out_attentions'] and 'q_dialog_attn' in ex['out_attentions']:
+                # Set flag to retrieve attentions, pass to attention layer
+                xdialog_weighted_emb_q, q_dialog_attn = self.q_dialog_match(xq_emb,
+                                                             xq_emb, xa_emb,
+                                                             xq_mask, xa_mask,
+                                                             out_attention=True)
+                out_attentions['q_dialog_attn'] = q_dialog_attn
+            else:
+                xdialog_weighted_emb_q = self.q_dialog_match(xq_emb,
+                                                             xq_emb, xa_emb,
+                                                             xq_mask, xa_mask)
             qrnn_input = torch.cat((qrnn_input, xdialog_weighted_emb_q), 2)
 
         # Encode question with RNN + merge hiddens
@@ -186,6 +201,8 @@ class DrQA(nn.Module):
             if question_hiddens.shape[0] == 1:
                 # That's all you get
                 dialog_weighted_hidden_q = first_zeros
+                if ex['out_attentions'] and 'q_dialog_attn' in ex['out_attentions']:
+                    out_attentions['q_dialog_attn'] = None
             else:
                 # Embed dialog, chopping off first timestep
                 xdialog_emb = self.w_embedding(ex['xdialog'][1:])
@@ -194,10 +211,19 @@ class DrQA(nn.Module):
 
                 dialog_hiddens = self.question_rnn(xdialog_emb, xdialog_mask)
 
-                dialog_weighted_hidden_q = self.q_dialog_match(
-                    question_hiddens[1:], dialog_hiddens, xdialog_mask,
-                    recency_weights=dialog_recency_weights if self.config['recency_bias'] else None
-                )
+                if ex['out_attentions'] and 'q_dialog_attn' in ex['out_attentions']:
+                    dialog_weighted_hidden_q, q_dialog_attn = self.q_dialog_match(
+                        question_hiddens[1:], dialog_hiddens, xdialog_mask,
+                        recency_weights=dialog_recency_weights if self.config['recency_bias'] else None,
+                        out_attention=True)
+                    # Concat first zeros.
+                    q_dialog_attn = torch.cat((torch.zeros_like(q_dialog_attn[0:1]), q_dialog_attn), 0)
+                    out_attentions['q_dialog_attn'] = q_dialog_attn
+                else:
+                    dialog_weighted_hidden_q = self.q_dialog_match(
+                        question_hiddens[1:], dialog_hiddens, xdialog_mask,
+                        recency_weights=dialog_recency_weights if self.config['recency_bias'] else None
+                    )
 
                 # First q has no access to dialog history
                 dialog_weighted_hidden_q = torch.cat((first_zeros, dialog_weighted_hidden_q), 0)
@@ -253,6 +279,11 @@ class DrQA(nn.Module):
             question_hidden = torch.cat([question_hidden, (doc_hiddens * start_scores.exp().unsqueeze(2)).sum(1)], 1)
         end_scores = self.end_attn(doc_hiddens, question_hidden, xd_mask)
 
-        return {'score_s': start_scores,
-                'score_e': end_scores,
-                'targets': ex['targets']}
+        out = {'score_s': start_scores,
+               'score_e': end_scores,
+               'targets': ex['targets']}
+        if ex['out_attentions']:
+            # Convert to numpy.
+            #  out_attentions = {k: v.detach().cpu().numpy() for k, v in out_attentions.items()}
+            out['out_attentions'] = out_attentions
+        return out
