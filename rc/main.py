@@ -80,12 +80,12 @@ def get_args():
     group = parser.add_argument_group('dialog_model_spec', 'Options specific to incorporating dialog history')
     group.add_argument('--f_history', type=str2bool, default=False,
                        help='Add exact match feature corresponding to history.')
+    group.add_argument('--q_dialog_history', type=str2bool, default=False, help='Whether to add historical averages of dialog (question AND answer tokens) to question. word_emb = match raw glove embedding; word_hidden = match BiLSTM hidden representations')
+    group.add_argument('--q_dialog_attn', type=str, choices=['word_emb', 'word_hidden'],
+                       default='word_emb', help='How to compute attention over past dialog')
     group.add_argument('--doc_dialog_history', type=str2bool, default=False, help='Whether to add historical averages of dialog (question AND answer tokens) to document.')
-    group.add_argument('--doc_dialog_attn', type=str, choices=['word'],
-                       default='word', help='How to compute attention over past dialog (word = ignore differences between qs and as)')
-    group.add_argument('--q_dialog_history', type=str2bool, default=False, help='Whether to add historical averages of dialog (question AND answer tokens) to question.')
-    group.add_argument('--q_dialog_attn', type=str, choices=['doc', 'word'],
-                       default='word', help='How to compute attention over past dialog (word = ignore differences between qs and as; doc = same as doc_dialog_attn)')
+    group.add_argument('--doc_dialog_attn', type=str, choices=['q', 'word_emb', 'word_hidden'],
+                       default='word_emb', help='How to compute attention over past dialog (q = same as q_dialog_attn)')
     group.add_argument('--history_dialog_answer_f', type=str2bool, default=False, help='Whether to add features distinguishing questions vs answers in historical dialog history.')
     group.add_argument('--history_dialog_time_f', type=str2bool, default=False, help='Whether to add features distinguishing timestep in historical dialog history (may overlap with recency_bias)')
     group.add_argument('--answer_merge', type=str, choices=['avg', 'self_attn'],
@@ -117,9 +117,9 @@ def get_args():
     args = vars(parser.parse_args())
 
     # Check that attention settings are compatible
-    if args['q_dialog_history'] and args['q_dialog_attn'] == 'doc' and not args['doc_dialog_history']:
-        parser.error("Can't use --q_dialog_history with --q_dialog_attn = 'doc' if not using --doc_dialog_history. "
-                     "Specify --q_dialog_attn separately or set --doc_dialog_history")
+    if args['doc_dialog_history'] and args['doc_dialog_attn'] == 'q' and not args['q_dialog_history']:
+        parser.error("Can't use --doc_dialog_history with --doc_dialog_attn = 'q' if not using --q_dialog_history. "
+                     "Specify --doc_dialog_attn separately or set --q_dialog_history")
 
     if args['dialog_batched'] and args['batch_size'] > 2:
         print("WARNING: --dialog_batched and --batch_size = {}. Did you mean to set a large dialog batch size?".format(args['batch_Size']))

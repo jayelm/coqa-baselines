@@ -17,12 +17,21 @@ class DrQA(nn.Module):
         self.w_embedding = w_embedding
         input_w_dim = self.w_embedding.embedding_dim
         q_input_size = input_w_dim
-        if self.config['q_dialog_history']:
+        if self.config['q_dialog_history'] and self.config['q_dialog_attn'] == 'word_emb':
             q_input_size += input_w_dim
         a_input_size = input_w_dim
         if self.config['fix_embeddings']:
             for p in self.w_embedding.parameters():
                 p.requires_grad = False
+
+        # Output sizes of rnn encoders
+        doc_hidden_size = 2 * config['hidden_size']
+        question_hidden_size = 2 * config['hidden_size']
+
+        if self.config['q_dialog_history'] and self.config['q_dialog_attn'] == 'word_hidden':
+            # Then question hidden reprs are augmented with attention weighted
+            # average of dialog hidden reprs
+            question_hidden_size += 2 * config['hidden_size']
 
         # USE ANSWER: whether we need to use raw answer embeddings
         self.use_answer = any(config[cfg] for cfg in ['doc_dialog_history', 'q_dialog_history'])
@@ -31,9 +40,31 @@ class DrQA(nn.Module):
         if self.config['use_qemb']:
             self.qemb_match = SeqAttnMatch(input_w_dim)
 
+        # Dialog-history-specific module for matching dialog history to question tokens
+        if self.config['q_dialog_history']:
+            if self.config['q_dialog_attn'] == 'word_emb':
+                self.q_dialog_match = DialogSeqAttnMatch(input_w_dim,
+                                                         recency_bias=self.config['recency_bias'],
+                                                         cuda=self.config['cuda'],
+                                                         answer_marker_features=self.config['history_dialog_answer_f'],
+                                                         time_features=self.config['history_dialog_time_f'])
+            elif self.config['q_dialog_attn'] == 'word_hidden':
+                # Use standard seqattnmatch because we have to rerun over all
+                # of dialog history (repeatedly), so we don't need to worry about time travel
+                # We work with hidden representations, not raw embeddings, so
+                # input size is adjusted for that
+                # TODO: Enable answer marker features
+                self.q_dialog_match = SeqAttnMatch(2 * self.config['hidden_size'])
+            else:
+                raise NotImplementedError("q_dialog_attn = {}".format(self.config['q_dialog_attn']))
+
         # Dialog-history-specific module for matching dialog history to document tokens
         if self.config['doc_dialog_history']:
-            if self.config['doc_dialog_attn'] == 'word':
+            if self.config['doc_dialog_attn'] == 'q':
+                self.doc_dialog_match = self.q_dialog_match
+            if self.config['doc_dialog_attn'] == 'word_emb':
+                # May be advantageous to have separate attention mechanisms, as
+                # a question-based one is probably more concerned with resolving coref.
                 self.doc_dialog_match = DialogSeqAttnMatch(input_w_dim,
                                                            recency_bias=self.config['recency_bias'],
                                                            cuda=self.config['cuda'],
@@ -41,21 +72,6 @@ class DrQA(nn.Module):
                                                            time_features=self.config['history_dialog_time_f'])
             else:
                 raise NotImplemented("doc_dialog_attn = {}".format(self.config['doc_dialog_attn']))
-
-        # Dialog-history-specific module for matching dialog history to question tokens
-        if self.config['q_dialog_history']:
-            if self.config['q_dialog_attn'] == 'doc':
-                self.q_dialog_match = self.doc_dialog_match
-            elif self.config['q_dialog_attn'] == 'word':
-                # May be advantageous to have separate attention mechanisms, as
-                # a question-based one is probably more concerned with resolving coref.
-                self.q_dialog_match = DialogSeqAttnMatch(input_w_dim,
-                                                         recency_bias=self.config['recency_bias'],
-                                                         cuda=self.config['cuda'],
-                                                         answer_marker_features=self.config['history_dialog_answer_f'],
-                                                         time_features=self.config['history_dialog_time_f'])
-            else:
-                raise NotImplementedError("q_dialog_attn = {}".format(self.config['q_dialog_attn']))
 
         # Input size to RNN: word emb + question emb + manual features
         doc_input_size = input_w_dim + self.config['num_features']
@@ -96,9 +112,6 @@ class DrQA(nn.Module):
             bidirectional=True,
         )
 
-        # Output sizes of rnn encoders
-        doc_hidden_size = 2 * config['hidden_size']
-        question_hidden_size = 2 * config['hidden_size']
         if config['concat_rnn_layers']:
             doc_hidden_size *= config['num_layers']
             question_hidden_size *= config['num_layers']
@@ -133,6 +146,7 @@ class DrQA(nn.Module):
         xd_mask = document padding mask        (batch, max_d_len)
         targets = span targets                 (batch,)
         """
+        # ==== EMBED ====
         # Embed both document and question
         xq_emb = self.w_embedding(ex['xq'])                         # (batch, max_q_len, word_embed)
         xd_emb = self.w_embedding(ex['xd'])                         # (batch, max_d_len, word_embed)
@@ -149,10 +163,10 @@ class DrQA(nn.Module):
         if self.use_answer:
             xa_mask = ex['xa_mask']
 
+        # ==== QUESTION ====
         qrnn_input = xq_emb
-
         # Augment question RNN input with attention over dialog history
-        if self.config['q_dialog_history']:
+        if self.config['q_dialog_history'] and self.config['q_dialog_attn'] == 'word_emb':
             xdialog_weighted_emb_q = self.q_dialog_match(xq_emb,
                                                          xq_emb, xa_emb,
                                                          xq_mask, xa_mask)
@@ -160,12 +174,45 @@ class DrQA(nn.Module):
 
         # Encode question with RNN + merge hiddens
         question_hiddens = self.question_rnn(qrnn_input, xq_mask)
+
+        # Re-use question rnn to encode dialog history (concatted qs and as)
+        # For each time t, we need to re-run RNN on dialog history separately
+        # from 1 ... t - 1, because BiLSTMs which let time travel backwards.
+        # Because of this extra computation we can use standard SeqAttnMatch,
+        # not DialogSeqAttnMatch which handles time travel.
+        if self.config['q_dialog_history'] and self.config['q_dialog_attn'] == 'word_hidden':
+            # First q has no access to dialog history
+            first_zeros = torch.zeros_like(question_hiddens[0:1], requires_grad=False)
+            if question_hiddens.shape[0] == 1:
+                # That's all you get
+                dialog_weighted_hidden_q = first_zeros
+            else:
+                # Embed dialog, chopping off first timestep
+                xdialog_emb = self.w_embedding(ex['xdialog'][1:])
+                xdialog_mask = ex['xdialog_mask'][1:]
+                dialog_recency_weights = ex['dialog_recency_weights'][1:]
+
+                dialog_hiddens = self.question_rnn(xdialog_emb, xdialog_mask)
+
+                dialog_weighted_hidden_q = self.q_dialog_match(
+                    question_hiddens[1:], dialog_hiddens, xdialog_mask,
+                    recency_weights=dialog_recency_weights if self.config['recency_bias'] else None
+                )
+
+                # First q has no access to dialog history
+                dialog_weighted_hidden_q = torch.cat((first_zeros, dialog_weighted_hidden_q), 0)
+
+            # Concat weighted hidden reprs with question hidden reprs.
+            # FIXME: Do we need one more LSTM layer to integrate this?
+            question_hiddens = torch.cat((question_hiddens, dialog_weighted_hidden_q), 2)
+
         if self.config['question_merge'] == 'avg':
             q_merge_weights = uniform_weights(question_hiddens, xq_mask)
         elif self.config['question_merge'] == 'self_attn':
             q_merge_weights = self.self_attn(question_hiddens.contiguous(), xq_mask)
         question_hidden = weighted_avg(question_hiddens, q_merge_weights)
 
+        # ==== DOCUMENT ====
         # Add attention-weighted question representation
         if self.config['use_qemb']:
             xq_weighted_emb = self.qemb_match(xd_emb, xq_emb, xq_mask)

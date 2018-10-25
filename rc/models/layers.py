@@ -519,7 +519,7 @@ class SeqAttnMatch(nn.Module):
         else:
             self.linear = None
 
-    def forward(self, x, y, y_mask):
+    def forward(self, x, y, y_mask, recency_weights=None):
         """Input shapes:
             x = batch * len1 * h  (document)
             y = batch * len2 * h  (question)
@@ -543,6 +543,10 @@ class SeqAttnMatch(nn.Module):
         # Mask padding
         y_mask = y_mask.unsqueeze(1).expand(scores.size())  # (batch, len1, len2)
         scores.masked_fill_(y_mask, -float('inf'))
+
+        if recency_weights is not None:
+            recency_weights = recency_weights.unsqueeze(1).expand(scores.size())
+            scores = scores + recency_weights
 
         # Normalize with softmax
         alpha = F.softmax(scores, dim=-1)
