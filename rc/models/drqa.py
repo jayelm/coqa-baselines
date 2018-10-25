@@ -62,7 +62,7 @@ class DrQA(nn.Module):
                 # We work with hidden representations, not raw embeddings, so
                 # input size is adjusted for that
                 # TODO: Enable answer marker features
-                self.q_dialog_match = SeqAttnMatch(question_hidden_size)
+                self.q_dialog_match = SeqAttnMatch(question_hidden_size / 2)  # q hidden size already includes doc
             else:
                 raise NotImplementedError("q_dialog_attn = {}".format(self.config['q_dialog_attn']))
 
