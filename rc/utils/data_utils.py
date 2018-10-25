@@ -482,7 +482,8 @@ def vectorize_input_dialog_batched(batch, config, training=True, device=None):
                 dialog_recency_weights[i, dialog_i:dialog_i_end].fill_(i - t)
             # Next, fill starting from this index of the dialog
             dialog_i = dialog_i_end
-        assert xdialog_mask[-1].sum().item() == 0.0
+        if not xdialog_mask[-1].sum().item() == 0.0:
+            assert batch_size == 1
 
     # Part 2: Document Words
     max_d_len = len(batch['evidence'])
