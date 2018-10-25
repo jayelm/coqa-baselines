@@ -30,18 +30,25 @@ class DrQA(nn.Module):
         # Projection for attention weighted question
         if self.config['use_qemb']:
             self.qemb_match = SeqAttnMatch(input_w_dim)
+
+        # Dialog-history-specific module for matching dialog history to document tokens
         if self.config['doc_dialog_history']:
-            self.doc_dialog_match = DialogSeqAttnMatch(input_w_dim,
-                                                       recency_bias=self.config['recency_bias'],
-                                                       cuda=self.config['cuda'],
-                                                       answer_marker_features=self.config['history_dialog_answer_f'],
-                                                       time_features=self.config['history_dialog_time_f'])
+            if self.config['doc_dialog_attn'] == 'word':
+                self.doc_dialog_match = DialogSeqAttnMatch(input_w_dim,
+                                                           recency_bias=self.config['recency_bias'],
+                                                           cuda=self.config['cuda'],
+                                                           answer_marker_features=self.config['history_dialog_answer_f'],
+                                                           time_features=self.config['history_dialog_time_f'])
+            else:
+                raise NotImplemented("doc_dialog_attn = {}".format(self.config['doc_dialog_attn']))
+
+        # Dialog-history-specific module for matching dialog history to question tokens
         if self.config['q_dialog_history']:
             if self.config['q_dialog_attn'] == 'doc':
                 self.q_dialog_match = self.doc_dialog_match
             elif self.config['q_dialog_attn'] == 'word':
                 # May be advantageous to have separate attention mechanisms, as
-                # a question-based one is probably more about resolving coref.
+                # a question-based one is probably more concerned with resolving coref.
                 self.q_dialog_match = DialogSeqAttnMatch(input_w_dim,
                                                          recency_bias=self.config['recency_bias'],
                                                          cuda=self.config['cuda'],
@@ -144,6 +151,7 @@ class DrQA(nn.Module):
 
         qrnn_input = xq_emb
 
+        # Augment question RNN input with attention over dialog history
         if self.config['q_dialog_history']:
             xdialog_weighted_emb_q = self.q_dialog_match(xq_emb,
                                                          xq_emb, xa_emb,
@@ -165,6 +173,7 @@ class DrQA(nn.Module):
         else:
             drnn_input = xd_emb
 
+        # Augment document RNN input with attention over dialog history
         if self.config['doc_dialog_history']:
             xdialog_weighted_emb_d = self.doc_dialog_match(xd_emb,
                                                            xq_emb, xa_emb,
