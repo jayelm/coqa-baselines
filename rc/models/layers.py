@@ -515,12 +515,15 @@ class SeqAttnMatch(nn.Module):
     * o_i = sum(alpha_j * y_j) for i in X
     * alpha_j = softmax(y_j * x_i)
     """
-    def __init__(self, input_size, identity=False):
+    def __init__(self, input_size, identity=False, recency_bias=False):
         super(SeqAttnMatch, self).__init__()
         if not identity:
             self.linear = nn.Linear(input_size, input_size)
         else:
             self.linear = None
+        self.recency_bias = recency_bias
+        if self.recency_bias:
+            self.recency_weight = nn.Parameter(torch.full((1, ), -0.1))
 
     def forward(self, x, y, y_mask, recency_weights=None,
                 out_attention=False):
@@ -549,8 +552,10 @@ class SeqAttnMatch(nn.Module):
         scores.masked_fill_(y_mask, -float('inf'))
 
         if recency_weights is not None:
+            if not self.recency_bias:
+                raise RuntimeError("Recency weights specified but recency_bias is false")
             recency_weights = recency_weights.unsqueeze(1).expand(scores.size())
-            scores = scores + recency_weights
+            scores = scores + (recency_weights * self.recency_weight)
 
         # Normalize with softmax
         alpha = F.softmax(scores, dim=-1)
