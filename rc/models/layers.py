@@ -130,7 +130,7 @@ class WordHistoryAttn(nn.Module):
         self.cuda = cuda
 
         if recency_bias:
-            self.recency_weight = nn.Parameter(torch.full((1, ), -0.1))
+            self.recency_weight = nn.Parameter(torch.full((1, ), -0.5))
 
     def forward(self, question_hiddens, question_hidden, q_mask):
         """
@@ -166,7 +166,7 @@ class QAHistoryAttn(nn.Module):
         self.cuda = cuda
         self.recency_bias = recency_bias
         if recency_bias:
-            self.recency_weight = nn.Parameter(torch.full((1, ), -0.1))
+            self.recency_weight = nn.Parameter(torch.full((1, ), -0.5))
 
     def forward(self, qa_hidden, question_hidden):
         """
@@ -219,7 +219,7 @@ class QAHistoryAttnBilinear(nn.Module):
         self.cuda = cuda
         self.recency_bias = recency_bias
         if recency_bias:
-            self.recency_weight = nn.Parameter(torch.full((1, ), -0.1))
+            self.recency_weight = nn.Parameter(torch.full((1, ), -0.5))
 
     def forward(self, qa_hidden, question_hidden):
         """
@@ -268,7 +268,7 @@ class SentenceHistoryAttn(nn.Module):
         self.use_current_timestep = use_current_timestep
 
         if recency_bias:
-            self.recency_weight = nn.Parameter(torch.full((1, ), -0.1))
+            self.recency_weight = nn.Parameter(torch.full((1, ), -0.5))
 
     def forward(self, x):
         """
@@ -384,7 +384,7 @@ class DialogSeqAttnMatch(nn.Module):
         self.cuda = cuda
         self.recency_bias = recency_bias
         if recency_bias:
-            self.recency_weight = nn.Parameter(torch.full((1, ), -0.1))
+            self.recency_weight = nn.Parameter(torch.full((1, ), -0.5))
 
         self.answer_marker_features = answer_marker_features
         self.time_features = time_features
@@ -523,7 +523,7 @@ class SeqAttnMatch(nn.Module):
             self.linear = None
         self.recency_bias = recency_bias
         if self.recency_bias:
-            self.recency_weight = nn.Parameter(torch.full((1, ), -0.1))
+            self.recency_weight = nn.Parameter(torch.full((1, ), -0.5))
 
     def forward(self, x, y, y_mask, recency_weights=None,
                 out_attention=False):
@@ -579,7 +579,7 @@ class IncrSeqAttnMatch(nn.Module):
 
         self.recency_bias = recency_bias
         if self.recency_bias:
-            self.recency_weight = nn.Parameter(torch.full((1, ), -0.1))
+            self.recency_weight = nn.Parameter(torch.full((1, ), -0.5))
 
         self.merge_type = merge_type
         if self.merge_type == 'average':
