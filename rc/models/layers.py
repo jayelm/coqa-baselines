@@ -571,9 +571,11 @@ class IncrSeqAttnMatch(nn.Module):
     """
     This is an incremental version of seqattnmatch. Firs
     """
-    def __init__(self, input_size, merge_type='average', recency_bias=False):
+    def __init__(self, input_size, merge_type='average', recency_bias=False,
+                 cuda=False):
         super(IncrSeqAttnMatch, self).__init__()
         self.linear = nn.Linear(input_size, input_size)
+        self.cuda = cuda
 
         self.recency_bias = recency_bias
         if self.recency_bias:
@@ -609,6 +611,7 @@ class IncrSeqAttnMatch(nn.Module):
         # Store augmented qa representations. Start with unedited t = 0.
         xqa_plus = [xq_proj[0], xa_proj[0]]
         xqa_mask_plus = [xq_mask[0], xa_mask[0]]
+        max_qa_len = xq_proj.shape[1] + xa_proj.shape[1]
         # Loop through qa pairs
         for t, (xq_t, xa_t) in enumerate(zip(xq_proj[1:], xa_proj[1:]), start=1):  # int, (max_q_len * h), (max_a_len * h)
             # Concat augmented qa pairs obtained up to this point.
@@ -618,8 +621,13 @@ class IncrSeqAttnMatch(nn.Module):
             scores = xq_t.mm(xqa_t.transpose(1, 0))  # (max_q_len, history_len)
 
             if self.recency_bias:
-                # TODO: Recency weights
-                raise NotImplementedError
+                recency_weights_np = np.repeat(np.arange(t, 0, -1, dtype=np.float32), max_qa_len)
+                recency_weights = torch.tensor(recency_weights_np, requires_grad=False)
+                if self.cuda:
+                    recency_weights = recency_weights.cuda()
+                recency_weights = recency_weights * self.recency_weight
+                recency_weights = recency_weights.expand(scores.size())
+                scores = scores + recency_weights
 
             # Mask nonexistent qa tokens.
             xqa_mask_t = xqa_mask_t.expand(scores.size())

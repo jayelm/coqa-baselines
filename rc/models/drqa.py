@@ -69,7 +69,8 @@ class DrQA(nn.Module):
                 self.q_dialog_match = IncrSeqAttnMatch(
                     question_hidden_size,
                     recency_bias=self.config['recency_bias'],
-                    merge_type=self.config['q_dialog_attn_incr_merge'])
+                    merge_type=self.config['q_dialog_attn_incr_merge'],
+                    cuda=self.config['cuda'])
             else:
                 raise NotImplementedError("q_dialog_attn = {}".format(self.config['q_dialog_attn']))
 
