@@ -246,12 +246,17 @@ class DrQA(nn.Module):
                 # together? But then how to deal with augmentation?
                 answer_hiddens = self.question_rnn(xa_emb, xa_mask)
                 if ex['out_attentions'] and 'q_dialog_attn' in ex['out_attentions']:
-                    raise NotImplementedError
-                # This module completely replaces existing question hiddens.
-                question_hiddens = self.q_dialog_match(
-                    question_hiddens, answer_hiddens, xq_mask, xa_mask,
-                    out_attention=False
-                )
+                    question_hiddens, q_dialog_attn = self.q_dialog_match(
+                        question_hiddens, answer_hiddens, xq_mask, xa_mask,
+                        out_attention=True
+                    )
+                    out_attentions['q_dialog_attn'] = q_dialog_attn
+                else:
+                    # This module completely replaces existing question hiddens.
+                    question_hiddens = self.q_dialog_match(
+                        question_hiddens, answer_hiddens, xq_mask, xa_mask,
+                        out_attention=False
+                    )
             else:
                 raise NotImplementedError
 

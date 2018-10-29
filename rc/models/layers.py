@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.nn.utils.rnn import pad_sequence
 
 from scipy.linalg import toeplitz
 import numpy as np
@@ -604,8 +605,6 @@ class IncrSeqAttnMatch(nn.Module):
         Output shapes:
             matched_seq = batch * max_d_len * h
         """
-        if out_attention:
-            raise NotImplementedError
         # Project q and a
         xq_proj = self.linear(xq_emb.view(-1, xq_emb.size(2))).view((xq_emb.shape[:2] + (-1, )))
         xq_proj = F.relu(xq_proj)
@@ -616,6 +615,8 @@ class IncrSeqAttnMatch(nn.Module):
         xqa_plus = [xq_proj[0], xa_proj[0]]
         xqa_mask_plus = [xq_mask[0], xa_mask[0]]
         max_qa_len = xq_proj.shape[1] + xa_proj.shape[1]
+        if out_attention:
+            out_scores = []
         # Loop through qa pairs
         for t, (xq_t, xa_t) in enumerate(zip(xq_proj[1:], xa_proj[1:]), start=1):  # int, (max_q_len * h), (max_a_len * h)
             # Concat augmented qa pairs obtained up to this point.
@@ -637,6 +638,8 @@ class IncrSeqAttnMatch(nn.Module):
             xqa_mask_t = xqa_mask_t.expand(scores.size())
             scores.masked_fill_(xqa_mask_t, -float('inf'))
             alpha = F.softmax(scores, dim=1)  # (max_q_len, history_len)
+            if out_attention:
+                out_scores.append(alpha)
             xq_t_history = alpha.mm(xqa_t)  # (max_q_len, h)
             # Merge xq with weighted history
             if self.merge_type == 'average':
@@ -661,7 +664,11 @@ class IncrSeqAttnMatch(nn.Module):
             xqa_plus.extend((xq_t_plus, xa_t_plus))
             xqa_mask_plus.extend((xq_mask[t], xa_mask[t]))
         # Concat and return augmented qa reprs (every 2nd repr)
-        return torch.stack(xqa_plus[::2])
+        if out_attention:
+            out_scores = pad_sequence(out_scores, batch_first=True)
+            return torch.stack(xqa_plus[::2]), out_scores
+        else:
+            return torch.stack(xqa_plus[::2])
 
 
 class BilinearSeqAttn(nn.Module):
