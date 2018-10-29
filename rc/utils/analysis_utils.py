@@ -37,7 +37,7 @@ def _write_attn_to_file(ex, config, attn_type, attn, fp, rev_word_dict):
                 curr_i = 0
             full_d_history.append('{}-{}-{}'.format(r, curr_i, rev_word_dict[last_d]))
             curr_i += 1
-        header = 'question,' + ','.join(full_d_history)
+        header = '<QUESTION>,' + ','.join(full_d_history)
         fout.write(header)
         fout.write('\n')
         xq = ex['xq'].detach().cpu().numpy()
