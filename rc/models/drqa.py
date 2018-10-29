@@ -247,7 +247,6 @@ class DrQA(nn.Module):
                 if ex['out_attentions'] and 'q_dialog_attn' in ex['out_attentions']:
                     raise NotImplementedError
                 # This module completely replaces existing question hiddens.
-                import ipdb; ipdb.set_trace
                 question_hiddens = self.q_dialog_match(
                     question_hiddens, answer_hiddens, xq_mask, xa_mask,
                     out_attention=False
