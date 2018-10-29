@@ -81,8 +81,10 @@ def get_args():
     group.add_argument('--f_history', type=str2bool, default=False,
                        help='Add exact match feature corresponding to history.')
     group.add_argument('--q_dialog_history', type=str2bool, default=False, help='Whether to add historical averages of dialog (question AND answer tokens) to question. word_emb = match raw glove embedding; word_hidden = match BiLSTM hidden representations')
-    group.add_argument('--q_dialog_attn', type=str, choices=['word_emb', 'word_hidden'],
+    group.add_argument('--q_dialog_attn', type=str, choices=['word_emb', 'word_hidden', 'word_hidden_incr'],
                        default='word_emb', help='How to compute attention over past dialog')
+    group.add_argument('--q_dialog_attn_incr_merge', type=str, choices=['average'],
+                       default='average', help='In the incremental case, how to average past and current representations')
     group.add_argument('--doc_dialog_history', type=str2bool, default=False, help='Whether to add historical averages of dialog (question AND answer tokens) to document.')
     group.add_argument('--doc_dialog_attn', type=str, choices=['q', 'word_emb', 'word_hidden'],
                        default='word_emb', help='How to compute attention over past dialog (q = same as q_dialog_attn)')

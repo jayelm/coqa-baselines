@@ -567,6 +567,76 @@ class SeqAttnMatch(nn.Module):
         return matched_seq                      # (batch, len2, h)
 
 
+class IncrSeqAttnMatch(nn.Module):
+    """
+    This is an incremental version of seqattnmatch. Firs
+    """
+    def __init__(self, input_size, merge_type='average', recency_bias=False):
+        super(IncrSeqAttnMatch, self).__init__()
+        self.linear = nn.Linear(input_size, input_size)
+
+        self.recency_bias = recency_bias
+        if self.recency_bias:
+            self.recency_weight = nn.Parameter(torch.full((1, ), -0.1))
+
+        self.merge_type = merge_type
+        if self.merge_type == 'average':
+            self.merge = lambda x, y: (x + y) / 2.0
+        else:
+            raise NotImplementedError("merge_type = {}".format(merge_type))
+
+    def forward(self, xq_emb, xa_emb, xq_mask, xa_mask,
+                out_attention=False):
+        """Input shapes:
+            # FIXME: This may be more generalizable if you re-include xd_emb as
+            # a first argument (and for dialog history matching, just pass xq
+            # twice)
+            xq_emb = batch * max_q_len * h  (document)
+            xa_emb = batch * max_a_len * h  (document)
+            xq_mask = batch * max_q_len * h  (document)
+            xa_mask = batch * max_a_len * h  (document)
+        Output shapes:
+            matched_seq = batch * max_d_len * h
+        """
+        if out_attention:
+            raise NotImplementedError
+        # Project q and a
+        xq_proj = self.linear(xq_emb.view(-1, xq_emb.size(2))).view((xq_emb.shape[:2] + (-1, )))
+        xq_proj = F.relu(xq_proj)
+        xa_proj = self.linear(xa_emb.view(-1, xa_emb.size(2))).view((xa_emb.shape[:2] + (-1, )))
+        xa_proj = F.relu(xa_proj)
+
+        # Store augmented qa representations. Start with unedited t = 0.
+        xqa_plus = [xq_proj[0], xa_proj[0]]
+        xqa_mask_plus = [xq_mask[0], xa_mask[0]]
+        # Loop through qa pairs
+        for t, (xq_t, xa_t) in enumerate(zip(xq_proj[1:], xa_proj[1:]), start=1):  # int, (max_q_len * h), (max_a_len * h)
+            # Concat augmented qa pairs obtained up to this point.
+            xqa_t = torch.cat(xqa_plus, 0)  # (history_len * h)
+            xqa_mask_t = torch.cat(xqa_mask_plus, 0)  # (history_len * h)
+            # Compute attention
+            scores = xq_t.mm(xqa_t.transpose(1, 0))  # (max_q_len, history_len)
+
+            if self.recency_bias:
+                # TODO: Recency weights
+                raise NotImplementedError
+
+            # Mask nonexistent qa tokens.
+            xqa_mask_t = xqa_mask_t.expand(scores.size())
+            scores.masked_fill_(xqa_mask_t, -float('inf'))
+            alpha = F.softmax(scores, dim=1)  # (max_q_len, history_len)
+            xq_t_history = alpha.mm(xqa_t)  # (max_q_len, h)
+            # Merge xq with weighted history
+            xq_t_plus = self.merge(xq_t, xq_t_history)
+            # Append augmented qa pair to history
+            # FIXME: For now just leave answers alone - later do attn as well?
+            xa_t_plus = xa_t
+            xqa_plus.extend((xq_t_plus, xa_t_plus))
+            xqa_mask_plus.extend((xq_mask[t], xa_mask[t]))
+        # Concat and return augmented qa reprs (every 2nd repr)
+        return torch.stack(xqa_plus[::2])
+
+
 class BilinearSeqAttn(nn.Module):
     """A bilinear attention layer over a sequence X w.r.t y:
     * o_i = softmax(x_i'Wy) for x_i in X.

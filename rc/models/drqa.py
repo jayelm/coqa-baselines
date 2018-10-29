@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from .layers import SeqAttnMatch, StackedBRNN, LinearSeqAttn, BilinearSeqAttn, SentenceHistoryAttn, QAHistoryAttn, QAHistoryAttnBilinear, DialogSeqAttnMatch
+from .layers import SeqAttnMatch, StackedBRNN, LinearSeqAttn, BilinearSeqAttn, SentenceHistoryAttn, QAHistoryAttn, QAHistoryAttnBilinear, DialogSeqAttnMatch, IncrSeqAttnMatch
 from .layers import weighted_avg, uniform_weights, dropout
 
 
@@ -65,6 +65,11 @@ class DrQA(nn.Module):
                 # q hidden size already includes doc
                 self.q_dialog_match = SeqAttnMatch(question_hidden_size // 2,
                                                    recency_bias=self.config['recency_bias'])
+            elif self.config['q_dialog_attn'] == 'word_hidden_incr':
+                self.q_dialog_match = IncrSeqAttnMatch(
+                    question_hidden_size,
+                    recency_bias=self.config['recency_bias'],
+                    merge_type=self.config['q_dialog_attn_incr_merge'])
             else:
                 raise NotImplementedError("q_dialog_attn = {}".format(self.config['q_dialog_attn']))
 
@@ -192,47 +197,65 @@ class DrQA(nn.Module):
         # Encode question with RNN + merge hiddens
         question_hiddens = self.question_rnn(qrnn_input, xq_mask)
 
-        # Re-use question rnn to encode dialog history (concatted qs and as)
-        # For each time t, we need to re-run RNN on dialog history separately
-        # from 1 ... t - 1, because BiLSTMs which let time travel backwards.
-        # Because of this extra computation we can use standard SeqAttnMatch,
-        # not DialogSeqAttnMatch which handles time travel.
-        if self.config['q_dialog_history'] and self.config['q_dialog_attn'] == 'word_hidden':
+        if self.config['q_dialog_history']:
+            # Re-use question rnn to encode dialog history (concatted qs and as)
+            # For each time t, we need to re-run RNN on dialog history separately
+            # from 1 ... t - 1, because BiLSTMs which let time travel backwards.
+            # Because of this extra computation we can use standard SeqAttnMatch,
+            # not DialogSeqAttnMatch which handles time travel.
             # First q has no access to dialog history
             first_zeros = torch.zeros_like(question_hiddens[0:1], requires_grad=False)
-            if question_hiddens.shape[0] == 1:
-                # That's all you get
-                dialog_weighted_hidden_q = first_zeros
-                if ex['out_attentions'] and 'q_dialog_attn' in ex['out_attentions']:
-                    out_attentions['q_dialog_attn'] = None
-            else:
-                # Embed dialog, chopping off first timestep
-                xdialog_emb = self.w_embedding(ex['xdialog'][1:])
-                xdialog_mask = ex['xdialog_mask'][1:]
-                dialog_recency_weights = ex['dialog_recency_weights'][1:]
-
-                dialog_hiddens = self.question_rnn(xdialog_emb, xdialog_mask)
-
-                if ex['out_attentions'] and 'q_dialog_attn' in ex['out_attentions']:
-                    dialog_weighted_hidden_q, q_dialog_attn = self.q_dialog_match(
-                        question_hiddens[1:], dialog_hiddens, xdialog_mask,
-                        recency_weights=dialog_recency_weights if self.config['recency_bias'] else None,
-                        out_attention=True)
-                    # Concat first zeros.
-                    q_dialog_attn = torch.cat((torch.zeros_like(q_dialog_attn[0:1]), q_dialog_attn), 0)
-                    out_attentions['q_dialog_attn'] = q_dialog_attn
+            if self.config['q_dialog_attn'] == 'word_hidden':
+                if question_hiddens.shape[0] == 1:
+                    # That's all you get
+                    dialog_weighted_hidden_q = first_zeros
+                    if ex['out_attentions'] and 'q_dialog_attn' in ex['out_attentions']:
+                        out_attentions['q_dialog_attn'] = None
                 else:
-                    dialog_weighted_hidden_q = self.q_dialog_match(
-                        question_hiddens[1:], dialog_hiddens, xdialog_mask,
-                        recency_weights=dialog_recency_weights if self.config['recency_bias'] else None
-                    )
+                    # Embed dialog, chopping off first timestep
+                    xdialog_emb = self.w_embedding(ex['xdialog'][1:])
+                    xdialog_mask = ex['xdialog_mask'][1:]
+                    dialog_recency_weights = ex['dialog_recency_weights'][1:]
 
+                    dialog_hiddens = self.question_rnn(xdialog_emb, xdialog_mask)
+
+                    if ex['out_attentions'] and 'q_dialog_attn' in ex['out_attentions']:
+                        dialog_weighted_hidden_q, q_dialog_attn = self.q_dialog_match(
+                            question_hiddens[1:], dialog_hiddens, xdialog_mask,
+                            recency_weights=dialog_recency_weights if self.config['recency_bias'] else None,
+                            out_attention=True)
+                        # Concat first zeros.
+                        q_dialog_attn = torch.cat((torch.zeros_like(q_dialog_attn[0:1]), q_dialog_attn), 0)
+                        out_attentions['q_dialog_attn'] = q_dialog_attn
+                    else:
+                        dialog_weighted_hidden_q = self.q_dialog_match(
+                            question_hiddens[1:], dialog_hiddens, xdialog_mask,
+                            recency_weights=dialog_recency_weights if self.config['recency_bias'] else None
+                        )
                 # First q has no access to dialog history
                 dialog_weighted_hidden_q = torch.cat((first_zeros, dialog_weighted_hidden_q), 0)
+                # Concat weighted hidden reprs with question hidden reprs.
+                # FIXME: Do we need one more LSTM layer to integrate this?
+                question_hiddens = torch.cat((question_hiddens, dialog_weighted_hidden_q), 2)
+            elif self.config['q_dialog_attn'] == 'word_hidden_incr':
+                xa_emb = self.w_embedding(ex['xa'])
+                xa_mask = ex['xa_mask']
+                # XXX: Reuse question RNN? Make new answer RNN? Run
+                # answers independently? Run question and answer pairs
+                # together? But then how to deal with augmentation?
+                answer_hiddens = self.question_rnn(xa_emb, xa_mask)
+                if ex['out_attentions'] and 'q_dialog_attn' in ex['out_attentions']:
+                    raise NotImplementedError
+                # This module completely replaces existing question hiddens.
+                import ipdb; ipdb.set_trace
+                question_hiddens = self.q_dialog_match(
+                    question_hiddens, answer_hiddens, xq_mask, xa_mask,
+                    out_attention=False
+                )
+            else:
+                raise NotImplementedError
 
-            # Concat weighted hidden reprs with question hidden reprs.
-            # FIXME: Do we need one more LSTM layer to integrate this?
-            question_hiddens = torch.cat((question_hiddens, dialog_weighted_hidden_q), 2)
+
 
         if self.config['question_merge'] == 'avg':
             q_merge_weights = uniform_weights(question_hiddens, xq_mask)
