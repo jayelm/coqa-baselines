@@ -6,16 +6,17 @@ from collections import Counter
 import torch
 
 
-def write_attns_to_file(ex, out_attentions, fdir, rev_word_dict):
+def write_attns_to_file(ex, config, out_attentions, fdir, rev_word_dict):
     os.makedirs(fdir, exist_ok=True)
     for attn_type, attn in out_attentions.items():
         if attn is None:
             continue
         fp = os.path.join(fdir, '{}-{}.csv'.format(ex['id'], attn_type))
-        _write_attn_to_file(ex, attn_type, attn, fp, rev_word_dict)
+        print("Writing attention to {}".format(fp))
+        _write_attn_to_file(ex, config, attn_type, attn, fp, rev_word_dict)
 
 
-def _write_attn_to_file(ex, attn_type, attn, fp, rev_word_dict):
+def _write_attn_to_file(ex, config, attn_type, attn, fp, rev_word_dict):
     attn = attn.detach().cpu().numpy()
     with open(fp, 'w') as fout:
         if attn_type != 'q_dialog_attn':
@@ -25,6 +26,9 @@ def _write_attn_to_file(ex, attn_type, attn, fp, rev_word_dict):
         curr_i = 0
         last_r = -1
         full_d_history = []
+        if config['q_dialog_attn'] == 'word_hidden_incr':
+            # Prepend keep probability.
+            full_d_history.append('<KEEP>')
         max_r = max(recency_np[-1])
         for (last_d, r) in zip(xdialog_np[-1], recency_np[-1]):
             r = int(max_r - r)

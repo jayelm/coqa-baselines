@@ -456,34 +456,29 @@ def vectorize_input_dialog_batched(batch, config, training=True, device=None):
         xa_mask[i, :len(a)].fill_(0)
 
     # Part 1.99: Load dialog words if attn mechanisms call for encoding dialog history
-    encode_dialog = (
-        (config['q_dialog_history'] and config['q_dialog_attn'] == 'word_hidden') or
-        (config['doc_dialog_history'] and config['doc_dialog_attn'] == 'word_hidden')
-    )
-    if encode_dialog:
-        # Last question is never in dialog history
-        max_dialog_len = sum(len(q) + len(a) for q, a in zip(batch['questions'][:-1], batch['annotated_answers'][:-1]))
-        if not max_dialog_len:
-            assert batch_size == 1
-            # Set dummy dialog len (1), then dialog just 1x1 zero matrix
-            max_dialog_len = 1
-        xdialog = torch.LongTensor(batch_size, max_dialog_len).fill_(0)
-        xdialog_mask = torch.ByteTensor(batch_size, max_dialog_len).fill_(1)
-        dialog_recency_weights = torch.zeros((batch_size, max_dialog_len), dtype=torch.float32)
-        dialog_i = 0
-        for t, (q, a) in enumerate(zip(batch['questions'], batch['annotated_answers']), start=0):
-            qa_len = len(q) + len(a)
-            # For all times i, where (t + 1 <= i < batch_size), we have access to
-            # the t-th qa pair
-            dialog_i_end = dialog_i + qa_len
-            for i in range(t + 1, batch_size):
-                xdialog[i, dialog_i:dialog_i_end].copy_(torch.LongTensor(q + a))
-                xdialog_mask[i, dialog_i:dialog_i_end].fill_(0)
-                dialog_recency_weights[i, dialog_i:dialog_i_end].fill_(i - t)
-            # Next, fill starting from this index of the dialog
-            dialog_i = dialog_i_end
-        if not xdialog_mask[-1].sum().item() == 0.0:
-            assert batch_size == 1
+    # Last question is never in dialog history
+    max_dialog_len = sum(len(q) + len(a) for q, a in zip(batch['questions'][:-1], batch['annotated_answers'][:-1]))
+    if not max_dialog_len:
+        assert batch_size == 1
+        # Set dummy dialog len (1), then dialog just 1x1 zero matrix
+        max_dialog_len = 1
+    xdialog = torch.LongTensor(batch_size, max_dialog_len).fill_(0)
+    xdialog_mask = torch.ByteTensor(batch_size, max_dialog_len).fill_(1)
+    dialog_recency_weights = torch.zeros((batch_size, max_dialog_len), dtype=torch.float32)
+    dialog_i = 0
+    for t, (q, a) in enumerate(zip(batch['questions'], batch['annotated_answers']), start=0):
+        qa_len = len(q) + len(a)
+        # For all times i, where (t + 1 <= i < batch_size), we have access to
+        # the t-th qa pair
+        dialog_i_end = dialog_i + qa_len
+        for i in range(t + 1, batch_size):
+            xdialog[i, dialog_i:dialog_i_end].copy_(torch.LongTensor(q + a))
+            xdialog_mask[i, dialog_i:dialog_i_end].fill_(0)
+            dialog_recency_weights[i, dialog_i:dialog_i_end].fill_(i - t)
+        # Next, fill starting from this index of the dialog
+        dialog_i = dialog_i_end
+    if not xdialog_mask[-1].sum().item() == 0.0:
+        assert batch_size == 1
 
     # Part 2: Document Words
     max_d_len = len(batch['evidence'])
@@ -524,14 +519,11 @@ def vectorize_input_dialog_batched(batch, config, training=True, device=None):
         'xd_mask': xd_mask.to(device) if device else xd_mask,
         'xd_f': xd_f.to(device) if device else xd_f,
         'targets': targets.to(device) if device else targets,
-        'id': batch['id']
+        'id': batch['id'],
+        'xdialog': xdialog.to(device) if device else xdialog,
+        'xdialog_mask': xdialog_mask.to(device) if device else xdialog_mask,
+        'dialog_recency_weights': dialog_recency_weights.to(device) if device else dialog_recency_weights,
     }
-    if encode_dialog:
-        example.update({
-            'xdialog': xdialog.to(device) if device else xdialog,
-            'xdialog_mask': xdialog_mask.to(device) if device else xdialog_mask,
-            'dialog_recency_weights': dialog_recency_weights.to(device) if device else dialog_recency_weights,
-        })
 
     if config['predict_raw_text']:
         example['raw_evidence_text'] = batch['raw_evidence_text']

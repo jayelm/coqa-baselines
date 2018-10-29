@@ -638,26 +638,30 @@ class IncrSeqAttnMatch(nn.Module):
             xqa_mask_t = xqa_mask_t.expand(scores.size())
             scores.masked_fill_(xqa_mask_t, -float('inf'))
             alpha = F.softmax(scores, dim=1)  # (max_q_len, history_len)
-            if out_attention:
-                out_scores.append(alpha)
             xq_t_history = alpha.mm(xqa_t)  # (max_q_len, h)
             # Merge xq with weighted history
             if self.merge_type == 'average':
-                xq_t_plus = (xq_t + xq_t_history) / 2
+                keep_p = torch.full((xq_t.shape[0], 1), 0.5, dtype=np.float32)
+                if self.cuda:
+                    keep_p = keep_p.cuda()
             elif self.merge_type == 'linear_current':
                 # Look at current word only, learn a scalar keep value.
                 # Intuition is that it'll learn, e.g., that pronouns are more
                 # important to resolve.
                 keep_p = self.merge_layer(xq_t)
                 keep_p = torch.sigmoid(keep_p)
-                xq_t_plus = (keep_p * xq_t) + ((1.0 - keep_p) * xq_t_history)
             elif self.merge_type == 'linear_both':
                 # Look at current word and past attention, just concatted.
                 keep_p = self.merge_layer(torch.cat((xq_t, xq_t_history), 1))
                 keep_p = torch.sigmoid(keep_p)
-                xq_t_plus = (keep_p * xq_t) + ((1.0 - keep_p) * xq_t_history)
             else:
                 raise NotImplementedError("merge_type = {}".format(self.merge_type))
+            xq_t_plus = (keep_p * xq_t) + ((1.0 - keep_p) * xq_t_history)
+            if out_attention:
+                alpha_masked = alpha[:, (1 - xqa_mask_t[0]).nonzero().squeeze()]
+                alpha_masked = torch.cat((keep_p, alpha_masked), 1)
+                out_scores.append(alpha_masked)
+
             # Append augmented qa pair to history
             # FIXME: For now just leave answers alone - later do attn as well?
             xa_t_plus = xa_t
@@ -665,7 +669,16 @@ class IncrSeqAttnMatch(nn.Module):
             xqa_mask_plus.extend((xq_mask[t], xa_mask[t]))
         # Concat and return augmented qa reprs (every 2nd repr)
         if out_attention:
-            out_scores = pad_sequence(out_scores, batch_first=True)
+            if not out_scores:
+                # (max_q_len, history_len)
+                out_scores = torch.zeros((1, xqa_plus[0].shape[0], xqa_plus[0].shape[0] + xqa_plus[1].shape[0]), dtype=np.float32)
+                if self.cuda:
+                    out_scores = out_scores.cuda()
+            else:
+                out_scores = [s.transpose(1, 0) for s in out_scores]
+                out_scores = pad_sequence(out_scores, batch_first=True)
+                out_scores = out_scores.permute(0, 2, 1)
+                out_scores = torch.cat((torch.zeros_like(out_scores[0:1]), out_scores), 0)
             return torch.stack(xqa_plus[::2]), out_scores
         else:
             return torch.stack(xqa_plus[::2])

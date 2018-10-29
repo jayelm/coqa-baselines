@@ -185,7 +185,7 @@ class Model(object):
                 if out_attentions:
                     # Save attentions to file.
                     fdir = os.path.join(self.config['pretrained'], 'attention')
-                    write_attns_to_file(ex, res['out_attentions'], fdir, self.rev_word_dict)
+                    write_attns_to_file(ex, self.config, res['out_attentions'], fdir, self.rev_word_dict)
 
         output = {
             # Do a weighted average of f1
