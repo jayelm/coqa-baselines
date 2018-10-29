@@ -20,3 +20,5 @@ data/quac/val.json
 
 exp/*
 !exp/README.md
+
+sync.sh
