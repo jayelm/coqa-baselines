@@ -641,7 +641,8 @@ class IncrSeqAttnMatch(nn.Module):
             xq_t_history = alpha.mm(xqa_t)  # (max_q_len, h)
             # Merge xq with weighted history
             if self.merge_type == 'average':
-                keep_p = torch.full((xq_t.shape[0], 1), 0.5, dtype=np.float32)
+                keep_p = torch.full((xq_t.shape[0], 1), 0.5, dtype=torch.float32,
+                                    requires_grad=False)
                 if self.cuda:
                     keep_p = keep_p.cuda()
             elif self.merge_type == 'linear_current':
