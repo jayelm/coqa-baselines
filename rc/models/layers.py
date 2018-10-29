@@ -583,7 +583,11 @@ class IncrSeqAttnMatch(nn.Module):
 
         self.merge_type = merge_type
         if self.merge_type == 'average':
-            self.merge = lambda x, y: (x + y) / 2.0
+            pass
+        elif self.merge_type == 'linear_current':
+            self.merge_layer = nn.Linear(input_size, 1)
+        elif self.merge_type == 'linear_both':
+            self.merge_layer = nn.Linear(2 * input_size, 1)
         else:
             raise NotImplementedError("merge_type = {}".format(merge_type))
 
@@ -635,7 +639,22 @@ class IncrSeqAttnMatch(nn.Module):
             alpha = F.softmax(scores, dim=1)  # (max_q_len, history_len)
             xq_t_history = alpha.mm(xqa_t)  # (max_q_len, h)
             # Merge xq with weighted history
-            xq_t_plus = self.merge(xq_t, xq_t_history)
+            if self.merge_type == 'average':
+                xq_t_plus = (xq_t + xq_t_history) / 2
+            elif self.merge_type == 'linear_current':
+                # Look at current word only, learn a scalar keep value.
+                # Intuition is that it'll learn, e.g., that pronouns are more
+                # important to resolve.
+                keep_p = self.merge_layer(xq_t)
+                keep_p = torch.sigmoid(keep_p)
+                xq_t_plus = (keep_p * xq_t) + ((1.0 - keep_p) * xq_t_history)
+            elif self.merge_type == 'linear_both':
+                # Look at current word and past attention, just concatted.
+                keep_p = self.merge_layer(torch.cat((xq_t, xq_t_history), 1))
+                keep_p = torch.sigmoid(keep_p)
+                xq_t_plus = (keep_p * xq_t) + ((1.0 - keep_p) * xq_t_history)
+            else:
+                raise NotImplementedError("merge_type = {}".format(self.merge_type))
             # Append augmented qa pair to history
             # FIXME: For now just leave answers alone - later do attn as well?
             xa_t_plus = xa_t
