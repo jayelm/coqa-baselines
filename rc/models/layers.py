@@ -573,7 +573,7 @@ class IncrSeqAttnMatch(nn.Module):
     This is an incremental version of seqattnmatch. Firs
     """
     def __init__(self, input_size, merge_type='average', recency_bias=False,
-                 cuda=False):
+                 cuda=False, max_history=-1):
         super(IncrSeqAttnMatch, self).__init__()
         self.linear = nn.Linear(input_size, input_size)
         self.cuda = cuda
@@ -581,6 +581,8 @@ class IncrSeqAttnMatch(nn.Module):
         self.recency_bias = recency_bias
         if self.recency_bias:
             self.recency_weight = nn.Parameter(torch.full((1, ), -0.5))
+
+        self.max_history = max_history
 
         self.merge_type = merge_type
         if self.merge_type == 'average':
@@ -635,6 +637,17 @@ class IncrSeqAttnMatch(nn.Module):
                 recency_weights = recency_weights * self.recency_weight
                 recency_weights = recency_weights.expand(scores.size())
                 scores = scores + recency_weights
+
+            if self.max_history > 0:
+                history_mask_np = np.repeat(np.arange(t, 0, -1, dtype=np.float32), max_qa_len)
+                history_mask_np = (history_mask_np > self.max_history).astype(np.uint8)
+                history_mask = torch.tensor(history_mask_np, requires_grad=False)
+                if self.cuda:
+                    history_mask = history_mask.cuda()
+                # Expand across tokens
+                history_mask = history_mask.expand(scores.size())
+                # Mask past history timesteps.
+                scores.masked_fill_(history_mask, -float('inf'))
 
             # Mask nonexistent qa tokens.
             xqa_mask_t = xqa_mask_t.expand(scores.size())

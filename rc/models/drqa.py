@@ -51,6 +51,8 @@ class DrQA(nn.Module):
         # Dialog-history-specific module for matching dialog history to question tokens
         if self.config['q_dialog_history']:
             if self.config['q_dialog_attn'] == 'word_emb':
+                if self.config['max_history'] > 0:
+                    raise NotImplementedError
                 self.q_dialog_match = DialogSeqAttnMatch(input_w_dim,
                                                          recency_bias=self.config['recency_bias'],
                                                          cuda=self.config['cuda'],
@@ -63,6 +65,8 @@ class DrQA(nn.Module):
                 # input size is adjusted for that
                 # TODO: Enable answer marker features
                 # q hidden size already includes doc
+                if self.config['max_history'] > 0:
+                    raise NotImplementedError
                 self.q_dialog_match = SeqAttnMatch(question_hidden_size // 2,
                                                    recency_bias=self.config['recency_bias'])
             elif self.config['q_dialog_attn'] == 'word_hidden_incr':
@@ -70,6 +74,7 @@ class DrQA(nn.Module):
                     question_hidden_size,
                     recency_bias=self.config['recency_bias'],
                     merge_type=self.config['q_dialog_attn_incr_merge'],
+                    max_history=self.config['max_history'],
                     cuda=self.config['cuda'])
             else:
                 raise NotImplementedError("q_dialog_attn = {}".format(self.config['q_dialog_attn']))
@@ -81,6 +86,8 @@ class DrQA(nn.Module):
             elif self.config['doc_dialog_attn'] == 'word_emb':
                 # May be advantageous to have separate attention mechanisms, as
                 # a question-based one is probably more concerned with resolving coref.
+                if self.config['max_history'] > 0:
+                    raise NotImplementedError
                 self.doc_dialog_match = DialogSeqAttnMatch(input_w_dim,
                                                            recency_bias=self.config['recency_bias'],
                                                            cuda=self.config['cuda'],
