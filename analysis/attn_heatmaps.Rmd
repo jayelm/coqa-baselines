@@ -1,0 +1,68 @@
+---
+title: "Attention heatmaps analysis"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(gplots)
+library(RColorBrewer)
+
+attn_col <- colorRampPalette(c('white', 'blue'))(1000)
+```
+
+```{r}
+read_attn <- function(expt, n = 0, type = 'q_dialog_attn') {
+  csv_fp <- paste0('../exp/', expt, '/attention/', n, '-', type, '.csv')
+  message("Reading ", csv_fp)
+  read_csv(csv_fp)
+}
+
+retrieve_q <- function(attn, n = 1) {
+  past_times_re <- 0:(n - 1) %>%
+    sapply(function(t) paste0('^', t, '-')) %>%
+    paste(collapse = '|')
+  attn_filtered <- attn %>%
+    filter(startsWith(`<QUESTION>`, paste0(n, '-')))
+  if ('<KEEP>' %in% colnames(attn)) {
+    attn_filtered <- attn_filtered %>%
+      select(`<QUESTION>`, matches(past_times_re), '<KEEP>')
+  } else {
+    attn_filtered <- attn_filtered %>%
+      select(`<QUESTION>`, matches(past_times_re))
+  }
+  attn_filtered
+}
+
+attn_hm <- function(attn, n = 1) {
+  if (n < 1) {
+    stop(paste0("Can't draw attention heatmap for n = ", n))
+  }
+  
+  aq <- retrieve_q(attn, n)
+  aq_m <- aq %>%
+    select(-`<QUESTION>`) %>%
+    as.matrix
+  
+  rownames(aq_m) <- aq$`<QUESTION>`
+  
+  heatmap.2(aq_m, Rowv = FALSE, Colv = FALSE, dendrogram = 'none',
+            col = attn_col, trace = 'none', cexRow = 0.9, cexCol = 0.9,
+            key = FALSE)
+}
+```
+
+
+```{r}
+# EXPT <- "q_dialog_attn_word_hidden"
+# EXPT <- "q_dialog_attn_word_hidden_no_recency"
+EXPT <- "q_dialog_attn_word_hidden_incr_linear_current"
+# EXPT <- "q_dialog_attn_word_hidden_incr_avg"
+# EXPT <- "q_dialog_attn_word_hidden_incr_linear_both"
+N <- 0
+attn <- read_attn(EXPT, N)
+```
+
+```{r}
+attn_hm(attn, 1)
+```
