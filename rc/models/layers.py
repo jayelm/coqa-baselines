@@ -612,18 +612,20 @@ class IncrSeqAttnMatch(nn.Module):
         xa_proj = F.relu(xa_proj)
 
         # Store augmented qa representations. Start with unedited t = 0.
-        xqa_plus = [xq_proj[0], xa_proj[0]]
+        xqa_plus = [xq_emb[0], xa_emb[0]]
+        xqa_plus_proj = [xq_proj[0], xa_proj[0]]
         xqa_mask_plus = [xq_mask[0], xa_mask[0]]
         max_qa_len = xq_proj.shape[1] + xa_proj.shape[1]
         if out_attention:
             out_scores = []
         # Loop through qa pairs
-        for t, (xq_t, xa_t) in enumerate(zip(xq_proj[1:], xa_proj[1:]), start=1):  # int, (max_q_len * h), (max_a_len * h)
+        for t, (xq_t_proj, xa_t_proj, xq_t, xa_t) in enumerate(zip(xq_proj[1:], xa_proj[1:], xq_emb[1:], xa_emb[1:]), start=1):  # int, (max_q_len * h), (max_a_len * h)
             # Concat augmented qa pairs obtained up to this point.
             xqa_t = torch.cat(xqa_plus, 0)  # (history_len * h)
+            xqa_t_proj = torch.cat(xqa_plus_proj, 0)  # (history_len * h)
             xqa_mask_t = torch.cat(xqa_mask_plus, 0)  # (history_len * h)
             # Compute attention
-            scores = xq_t.mm(xqa_t.transpose(1, 0))  # (max_q_len, history_len)
+            scores = xq_t_proj.mm(xqa_t_proj.transpose(1, 0))  # (max_q_len, history_len)
 
             if self.recency_bias:
                 recency_weights_np = np.repeat(np.arange(t, 0, -1, dtype=np.float32), max_qa_len)
@@ -638,6 +640,7 @@ class IncrSeqAttnMatch(nn.Module):
             xqa_mask_t = xqa_mask_t.expand(scores.size())
             scores.masked_fill_(xqa_mask_t, -float('inf'))
             alpha = F.softmax(scores, dim=1)  # (max_q_len, history_len)
+            # Perform matrix multiplication with non-projected embeddings.
             xq_t_history = alpha.mm(xqa_t)  # (max_q_len, h)
             # Merge xq with weighted history
             if self.merge_type == 'average':
@@ -658,6 +661,9 @@ class IncrSeqAttnMatch(nn.Module):
             else:
                 raise NotImplementedError("merge_type = {}".format(self.merge_type))
             xq_t_plus = (keep_p * xq_t) + ((1.0 - keep_p) * xq_t_history)
+            # Reproject augmented vector.
+            xq_t_plus_proj = self.linear(xq_t_plus)
+            xq_t_plus_proj = F.relu(xq_t_plus_proj)
             if out_attention:
                 alpha_masked = alpha[:, (1 - xqa_mask_t[0]).nonzero().squeeze()]
                 alpha_masked = torch.cat((keep_p, alpha_masked), 1)
@@ -666,7 +672,9 @@ class IncrSeqAttnMatch(nn.Module):
             # Append augmented qa pair to history
             # FIXME: For now just leave answers alone - later do attn as well?
             xa_t_plus = xa_t
+            xa_t_plus_proj = xa_t_proj
             xqa_plus.extend((xq_t_plus, xa_t_plus))
+            xqa_plus_proj.extend((xq_t_plus_proj, xa_t_plus_proj))
             xqa_mask_plus.extend((xq_mask[t], xa_mask[t]))
         # Concat and return augmented qa reprs (every 2nd repr)
         if out_attention:
