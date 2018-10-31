@@ -1,5 +1,5 @@
 ---
-title: "Attention heatmaps analysis"
+title: "DialogDrQA"
 output: html_document
 ---
 
@@ -8,20 +8,28 @@ library(tidyverse)
 library(gplots)
 library(RColorBrewer)
 
+knitr::opts_chunk$set(message=FALSE, warning=FALSE, echo=FALSE)
+
 attn_col <- colorRampPalette(c('white', 'blue'))(1000)
 ```
 
-```{r}
+```{r funcs, include=FALSE}
 read_attn <- function(expt, n = 0, type = 'q_dialog_attn') {
   csv_fp <- paste0('../exp/', expt, '/attention/', n, '-', type, '.csv')
   message("Reading ", csv_fp)
   read_csv(csv_fp)
 }
 
-retrieve_q <- function(attn, n = 1) {
-  past_times_re <- 0:(n - 1) %>%
-    sapply(function(t) paste0('^', t, '-')) %>%
-    paste(collapse = '|')
+retrieve_q <- function(attn, n = 1, max_history = -1) {
+  if (max_history > -1) {
+    past_times_re <- (n - max_history):(n - 1) %>%
+      sapply(function(t) paste0('^', t, '-')) %>%
+      paste(collapse = '|')
+  } else {
+    past_times_re <- 0:(n - 1) %>%
+      sapply(function(t) paste0('^', t, '-')) %>%
+      paste(collapse = '|')
+  }
   attn_filtered <- attn %>%
     filter(startsWith(`<QUESTION>`, paste0(n, '-')))
   if ('<KEEP>' %in% colnames(attn)) {
@@ -34,35 +42,205 @@ retrieve_q <- function(attn, n = 1) {
   attn_filtered
 }
 
-attn_hm <- function(attn, n = 1) {
+attn_hm <- function(attn, n = 1, max_history = -1, hm_title = "") {
   if (n < 1) {
     stop(paste0("Can't draw attention heatmap for n = ", n))
   }
   
-  aq <- retrieve_q(attn, n)
+  aq <- retrieve_q(attn, n, max_history)
   aq_m <- aq %>%
     select(-`<QUESTION>`) %>%
     as.matrix
   
   rownames(aq_m) <- aq$`<QUESTION>`
   
+  # Add by one since the math here is 1-indexed
+  np <- n + 1
+  
+  par(las = 1)
   heatmap.2(aq_m, Rowv = FALSE, Colv = FALSE, dendrogram = 'none',
             col = attn_col, trace = 'none', cexRow = 0.9, cexCol = 0.9,
-            key = FALSE)
+            key.xtickfun = function() list(at = seq(0, 1, 0.25), labels = seq(0, 1, 0.25)),
+            key.ylab = NA,
+            key.xlab = NA,
+            key.title = NA,
+            density.info = 'none',
+            keysize = 1,
+            key.ytickfun = function() list(at = c(), labels = c()),
+            margins = c(7, 7),
+            xlab = bquote(bold(d^{.(np)+phantom(0)})),
+            ylab = bquote(bold(q^{.(np)})),
+            colsep = ifelse('<KEEP>' %in% colnames(aq_m), length(colnames(aq_m)) - 1, NA),
+            sepcolor = 'black',
+            sepwidth = c(0.1, 0.1),
+            breaks = seq(0, 1, length.out = 1001)
+            )
+  title(hm_title)
 }
 ```
 
+In this work, we explore the role of attending to the dialog history when attempting to answer a question in a multi-turn QA setting (e.g. CoQA or QuAC).
 
-```{r}
-# EXPT <- "q_dialog_attn_word_hidden"
-# EXPT <- "q_dialog_attn_word_hidden_no_recency"
-EXPT <- "q_dialog_attn_word_hidden_incr_linear_current"
-# EXPT <- "q_dialog_attn_word_hidden_incr_avg"
-# EXPT <- "q_dialog_attn_word_hidden_incr_linear_both"
-N <- 0
-attn <- read_attn(EXPT, N)
+# Attending to dialog history
+
+At time $t$, we have a question $q^t$ consisting of $l_t$ tokens $\{q^t_1, \dots, q^t_l\}$ and a (gold-standard) answer
+$a^t$ consisting of $n_t$ tokens $\{a^t_1, \dots, a^t_{n_t}\}$. We represent question tokens
+$q^t$ as feature vectors $\{\tilde{\mathbf{q}}^t_1, \dots, \tilde{\mathbf{q}}^t_{l_t}\}$ and answer tokens likewise.
+For now we just use their fastText word embeddings as features.
+
+In standard DrQA, we run question token embeddings through a multi-layer BiLSTM
+to obtain hidden representations for each token:
+
+$$
+\mathbf{q}^t = \{\mathbf{q}^t_1, \dots, \mathbf{q}^t_{l_t}\} = \text{BiLSTM}(\{\tilde{\mathbf{q}}^t_1, \dots, \tilde{\mathbf{q}}^t_{l_t}\})
+$$
+
+In the multi-turn setting, we will also run answer embeddings through the same
+encoder. This is just to provide answer representations as dialog history for
+future timesteps; DialogDrQA obviously does not see the answer to the current
+question.
+
+$$
+\mathbf{a}^t = \{\mathbf{a}^t_1, \dots, \mathbf{a}^t_{n_t}\} = \text{BiLSTM}(\{\tilde{\mathbf{a}}^t_1, \dots, \tilde{\mathbf{a}}^t_{n_t}\})
+$$
+
+We are interested in augmenting these question hidden representations with
+features aggregated across the dialog history up to time $t$, to generate
+representations $\mathbf{q}^{t+}, \mathbf{a}^{t+}$. At $t = 1$, there is no dialog history, thus we simply set $\mathbf{q}^{t+} = \mathbf{q}^{t}$ and $\mathbf{a}^{t+} = \mathbf{a}^{t}$.
+At $t > 1$, we have access to previous augmented representations $\mathbf{q}^{j+}, \mathbf{a}^{j+}$ for times $1 \leq j < t$.
+
+To augment $\mathbf{q}^{t}, \mathbf{a}^{t}$, we first form the *dialog history* $\mathbf{d}^{t+}$ up to time $t$ by concatenating past questions and answers:
+
+\begin{align}
+\mathbf{d}^{t+} &= \{\mathbf{d}^{t+}_i, \dots, \mathbf{d}^{t+}_{h_t}\} \\ &= \{\mathbf{q}^{1+}; \mathbf{a}^{1+}; \dots; \mathbf{q}^{(t - 1)+}; \mathbf{a}^{(t - 1)+}\} \\
+&= \{\mathbf{q}^{1+}_1, \dots, \mathbf{q}^{1+}_{l_1}, \mathbf{a}^{1+}_1, \dots, \mathbf{a}^{1+}_{n_1}, \dots, \dots, \mathbf{a}^{(t - 1)+}_{n_{t - 1}}\}
+\end{align}
+
+Then, for each token in the current question $\mathbf{q}^t_i$, we compute a weighted average $\mathbf{h}^t_i$ across tokens in the dialog history
+$$
+\mathbf{h}^t_i = \sum_j \alpha_{ij} \mathbf{d}^t_{j}
+$$
+where $\alpha_{ij}$ are attention scores between $\mathbf{q}^t_i$ and every past dialog token:
+$$
+\alpha_{ij} \propto \exp(\text{ReLU}(\mathbf{W} \mathbf{q}^t_i) \cdot \text{ReLU}(\mathbf{W} \mathbf{d}^t_j) + \theta(t - t_j))
+$$
+
+Since we want to favor more recent questions/answers in the dialog history, we
+also include a linear *recency bias* parameter, $\theta$. Let $t_j$ be the
+(absolute) timestep which dialog token $\mathbf{d}^t_j$ belongs to; then
+$\theta$ downweights questions that occur earlier relative to $t$.
+
+Thus, each pair $(\mathbf{q}^t_i, \mathbf{h}^t_i)$ respectively encodes the
+current question token representation and (hopefully) the historical information
+relevant for understanding the current token. What remains is to \emph{merge}
+the current and historical representations together:
+$$
+\mathbf{q}^{t+}_i = \text{merge}(\mathbf{q}^t_i, \mathbf{h}^t_i)
+$$
+
+**For now, we leave answer representations alone:** $\mathbf{a}^{t+}_i = \mathbf{a}^t_i$.
+
+This augmented representation $\mathbf{q}^{t+}$ is what is used in the rest of
+the traditional DrQA pipeline (in particular, forming single question vectors by
+averaging across $\mathbf{q}^{t+}_i$ with self attention). In addition,
+$\mathbf{q}^{t+}$ and $\mathbf{a}^{t+}$ are then used as part of the dialog
+history for future timesteps.
+
+## Defining the merge function
+
+Here we present various formulations of the merge function, and what kind of attention maps result from training a model with that function.
+
+### Average
+We experiment with various ways of defining a merge function. First, one sensible approach is to simply do a standard average of the two vectors:
+
+$$
+\text{merge}(\mathbf{q}^t_i, \mathbf{h}^t_i) = (\mathbf{q}^t_i + \mathbf{h}^t_i) / 2
+$$
+
+which is akin to setting a constant *keep probability* $k_i = 0.5$ (see later examples).
+
+#### Examples
+
+In the following examples, the current question is labeled on the y axis; the
+dialog history is labeled on the x axis. (each token prepended with time and
+position in the q/a pair of the time). The far right column indicates the
+(possibly learned) "keep" probability. Here, since there is a straight average,
+the keep probability is always 0.5.
+
+```{r avg_attn, echo=FALSE, warning=FALSE}
+attn_0 <- read_attn("q_dialog_attn_word_hidden_incr_avg")
+
+attn_hm(attn_0, 1, hm_title = "Dev ex. 0, t = 2")
+attn_hm(attn_0, 2, hm_title = "Dev ex. 0, t = 3")
+attn_hm(attn_0, 5, hm_title = "Dev ex. 0, t = 6")
 ```
 
-```{r}
-attn_hm(attn, 1)
+```{r avg_attn_2, echo=FALSE, warning=FALSE}
+attn_2 <- read_attn("q_dialog_attn_word_hidden_incr_avg", 1)
+
+attn_hm(attn_2, 1, hm_title = "Dev ex. 1, t = 2")
+attn_hm(attn_2, 2, hm_title = "Dev ex. 1, t = 3")
+attn_hm(attn_2, 5, hm_title = "Dev ex. 1, t = 6")
 ```
+
+
+### Gating
+
+The next functions depend on learning a "gate" which decides to what degree to incorporate history. The gates output a *keep* value $k_i \in [0, 1]$, controlling the tradeoff between $\mathbf{q}^t_i$ and $\mathbf{h}^t_i$. A value of 1 means to keep the current representation, while a value of 0 means to use only the historical representation.
+
+$$
+\text{merge}(\mathbf{q}^t_i, \mathbf{h}^t_i) = k_i \mathbf{q}^t_i + (1 - k_i) \mathbf{h}^t_i
+$$
+
+#### Current word
+
+This gate looks only at the representation of the current word when deciding to keep/forget:
+$$k_i = \sigma(\mathbf{w}_k \cdot \mathbf{q}^t_i)$$
+where $\mathbf{w}_k$ is a weight matrix of same dimensionality as $\mathbf{q}_t$ and $\sigma$ is the sigmoid function.
+
+```{r linear_current_attn, echo=FALSE, warning=FALSE}
+attn_0 <- read_attn("q_dialog_attn_word_hidden_incr_linear_current")
+
+attn_hm(attn_0, 1, hm_title = "Dev ex. 0, t = 2")
+attn_hm(attn_0, 2, hm_title = "Dev ex. 0, t = 3")
+attn_hm(attn_0, 5, hm_title = "Dev ex. 0, t = 6")
+
+```
+
+```{r linear_current_attn_2, echo=FALSE, warning=FALSE}
+attn_2 <- read_attn("q_dialog_attn_word_hidden_incr_linear_current", 1)
+
+attn_hm(attn_2, 1, hm_title = "Dev ex. 1, t = 2")
+attn_hm(attn_2, 2, hm_title = "Dev ex. 1, t = 3")
+attn_hm(attn_2, 5, hm_title = "Dev ex. 1, t = 6")
+```
+
+#### Current word and past attention
+
+This gate looks at \emph{both} the current and historical representations, concatenated together:
+$$k_i = \sigma(\mathbf{w}_k \cdot [\mathbf{q}^t_i; \mathbf{h}^t_i])$$
+where $\mathbf{w}_k$ has dimensionality $|\mathbf{q}^t_i| + |\mathbf{h}^t_i|$.
+
+```{r linear_both_attn, echo=FALSE, warning=FALSE}
+attn_0 <- read_attn("q_dialog_attn_word_hidden_incr_linear_both")
+
+attn_hm(attn_0, 1, hm_title = "Dev ex. 0, t = 2")
+attn_hm(attn_0, 2, hm_title = "Dev ex. 0, t = 3")
+attn_hm(attn_0, 5, hm_title = "Dev ex. 0, t = 6")
+```
+
+```{r linear_both_attn_2, echo=FALSE, warning=FALSE}
+attn_2 <- read_attn("q_dialog_attn_word_hidden_incr_linear_both", 1)
+
+attn_hm(attn_2, 1, hm_title = "Dev ex. 1, t = 2")
+attn_hm(attn_2, 2, hm_title = "Dev ex. 1, t = 3")
+attn_hm(attn_2, 5, hm_title = "Dev ex. 1, t = 6")
+```
+
+#### Others?
+
+Other features may be useful, e.g. the attention weights $\alpha_{ij}$ (both
+before and after softmax normalization). Additionally, right now these gates
+learn keep probabilities independently for each question token. It may be
+beneficial to use an RNN to output keep probabilities at each step, so there are
+dependencies between the tokens.
