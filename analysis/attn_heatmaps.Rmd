@@ -1,11 +1,19 @@
 ---
 title: "DialogDrQA"
-output: html_document
+output:
+  pdf_document:
+    toc: yes
+  pdf: null
+  html_document:
+    number_sections: yes
+    toc: yes
+    toc_float: yes
 ---
 
 ```{r setup, include=FALSE}
 library(tidyverse)
 library(gplots)
+library(cowplot)
 library(RColorBrewer)
 
 knitr::opts_chunk$set(message=FALSE, warning=FALSE, echo=FALSE)
@@ -13,7 +21,7 @@ knitr::opts_chunk$set(message=FALSE, warning=FALSE, echo=FALSE)
 attn_col <- colorRampPalette(c('white', 'blue'))(1000)
 ```
 
-```{r funcs, include=FALSE}
+```{r attn_funcs, include=FALSE}
 read_attn <- function(expt, n = 0, type = 'q_dialog_attn') {
   csv_fp <- paste0('../exp/', expt, '/attention/', n, '-', type, '.csv')
   message("Reading ", csv_fp)
@@ -79,9 +87,70 @@ attn_hm <- function(attn, n = 1, max_history = -1, hm_title = "") {
 }
 ```
 
-In this work, we explore the role of attending to the dialog history when attempting to answer a question in a multi-turn QA setting (e.g. CoQA or QuAC).
+```{r metrics_funcs, include=FALSE}
+MODEL_NAMES <- c(
+  'q_dialog_attn_word_hidden_incr_linear_both_h250' = 'Current + History Gate',
+  'q_dialog_attn_word_hidden_incr_linear_current_h250' = 'Current Gate',
+  'q_dialog_attn_word_hidden_incr_avg_h250' = 'Average Gate',
+  'dialog_batched_2' = 'Baseline (dialog batching)',
+  'danqi_baseline_exp' = 'Danqi Baseline',
+  'q_dialog_attn_word_hidden' = 'No Incremental'
+)
 
-# Attending to dialog history
+load_metrics <- function(ms) {
+  all_metrics <- data.frame(
+    epoch = NULL,
+    value = NULL,
+    metric = NULL,
+    model = NULL
+  )
+  for (m in ms) {
+    dir <- paste0('../exp/', m, '/metrics/metrics/')
+    dev_em_fp <- paste0(dir, 'dev_em_epoch.txt')
+    dev_f1_fp <- paste0(dir, 'dev_f1_epoch.txt')
+    dev_em <- scan(dev_em_fp, sep='\n')
+    dev_f1 <- scan(dev_f1_fp, sep='\n')
+    epoch <- seq_along(dev_f1)
+    metrics <- data.frame (
+      model = MODEL_NAMES[m],
+      value = dev_f1,
+      metric = 'dev_f1',
+      epoch = epoch
+    )
+    all_metrics = rbind(all_metrics, metrics)
+  }
+  all_metrics
+}
+```
+
+
+In this work, we explore the role of attending to the dialog history when attempting to answer a question in a multi-turn QA setting (e.g. CoQA or QuAC). Here are the scores of the models explored in this section. TL;DR no major improvements yet.
+
+```{r}
+metrics <- load_metrics(names(MODEL_NAMES))
+ggplot(metrics, aes(x = epoch, y = value, group = model, color = model)) +
+  geom_line() +
+  xlab('Training Epoch') +
+  ylab('Dev F1')
+```
+
+# Incrementally attending to dialog history
+
+## Motivation
+
+Here we describe the idea of "incrementally" attending to dialog history: at each question, update the question with dialog-sensitive representations, then update. We pitched this idea due to the **coreference chain** problem: for example, given the series of questions
+
+1. What color was Cotton?
+2. Where did she live?
+3. Did she live alone?
+
+We observed that when simply re-computing attention over hidden representations
+for each question, the `she` in the 3rd question would (understandably) match
+primarily to the `she` in the second question. However, the `she` in question 2
+itself refers to `Cotton` in question 1! Thus there is a need for question
+hidden representations to iteratively update themselves as time goes on.
+
+## Problem formalization
 
 At time $t$, we have a question $q^t$ consisting of $l_t$ tokens $\{q^t_1, \dots, q^t_l\}$ and a (gold-standard) answer
 $a^t$ consisting of $n_t$ tokens $\{a^t_1, \dots, a^t_{n_t}\}$. We represent question tokens
@@ -118,12 +187,13 @@ To augment $\mathbf{q}^{t}, \mathbf{a}^{t}$, we first form the *dialog history* 
 
 Then, for each token in the current question $\mathbf{q}^t_i$, we compute a weighted average $\mathbf{h}^t_i$ across tokens in the dialog history
 $$
-\mathbf{h}^t_i = \sum_j \alpha_{ij} \mathbf{d}^t_{j}
+\mathbf{h}^t_i = \sum_j \alpha_{ij} \mathbf{d}^{t+}_{j}
 $$
 where $\alpha_{ij}$ are attention scores between $\mathbf{q}^t_i$ and every past dialog token:
 $$
-\alpha_{ij} \propto \exp(\text{ReLU}(\mathbf{W} \mathbf{q}^t_i) \cdot \text{ReLU}(\mathbf{W} \mathbf{d}^t_j) + \theta(t - t_j))
+\alpha_{ij} \propto \exp(\text{ReLU}(\mathbf{W} \mathbf{q}^t_i)^T \cdot \text{ReLU}(\mathbf{W} \mathbf{d}^t_j) + \theta(t - t_j))
 $$
+Here, $\mathbf{W}$ is a $k \times h$ matrix, where $k$ is the attention size and $h$ is the hidden representation size.
 
 Since we want to favor more recent questions/answers in the dialog history, we
 also include a linear *recency bias* parameter, $\theta$. Let $t_j$ be the
@@ -132,7 +202,7 @@ $\theta$ downweights questions that occur earlier relative to $t$.
 
 Thus, each pair $(\mathbf{q}^t_i, \mathbf{h}^t_i)$ respectively encodes the
 current question token representation and (hopefully) the historical information
-relevant for understanding the current token. What remains is to \emph{merge}
+relevant for understanding the current token. What remains is to *merge*
 the current and historical representations together:
 $$
 \mathbf{q}^{t+}_i = \text{merge}(\mathbf{q}^t_i, \mathbf{h}^t_i)
@@ -165,10 +235,10 @@ In the following examples, the current question is labeled on the y axis; the
 dialog history is labeled on the x axis. (each token prepended with time and
 position in the q/a pair of the time). The far right column indicates the
 (possibly learned) "keep" probability. Here, since there is a straight average,
-the keep probability is always 0.5.
+the keep probability is always 0.5. Attention size $k$ is set to 250 for all experiments.
 
 ```{r avg_attn, echo=FALSE, warning=FALSE}
-attn_0 <- read_attn("q_dialog_attn_word_hidden_incr_avg")
+attn_0 <- read_attn("q_dialog_attn_word_hidden_incr_avg_h250")
 
 attn_hm(attn_0, 1, hm_title = "Dev ex. 0, t = 2")
 attn_hm(attn_0, 2, hm_title = "Dev ex. 0, t = 3")
@@ -176,7 +246,7 @@ attn_hm(attn_0, 5, hm_title = "Dev ex. 0, t = 6")
 ```
 
 ```{r avg_attn_2, echo=FALSE, warning=FALSE}
-attn_2 <- read_attn("q_dialog_attn_word_hidden_incr_avg", 1)
+attn_2 <- read_attn("q_dialog_attn_word_hidden_incr_avg_h250", 1)
 
 attn_hm(attn_2, 1, hm_title = "Dev ex. 1, t = 2")
 attn_hm(attn_2, 2, hm_title = "Dev ex. 1, t = 3")
@@ -199,16 +269,15 @@ $$k_i = \sigma(\mathbf{w}_k \cdot \mathbf{q}^t_i)$$
 where $\mathbf{w}_k$ is a weight matrix of same dimensionality as $\mathbf{q}_t$ and $\sigma$ is the sigmoid function.
 
 ```{r linear_current_attn, echo=FALSE, warning=FALSE}
-attn_0 <- read_attn("q_dialog_attn_word_hidden_incr_linear_current")
+attn_0 <- read_attn("q_dialog_attn_word_hidden_incr_linear_current_h250")
 
 attn_hm(attn_0, 1, hm_title = "Dev ex. 0, t = 2")
 attn_hm(attn_0, 2, hm_title = "Dev ex. 0, t = 3")
 attn_hm(attn_0, 5, hm_title = "Dev ex. 0, t = 6")
-
 ```
 
 ```{r linear_current_attn_2, echo=FALSE, warning=FALSE}
-attn_2 <- read_attn("q_dialog_attn_word_hidden_incr_linear_current", 1)
+attn_2 <- read_attn("q_dialog_attn_word_hidden_incr_linear_current_h250", 1)
 
 attn_hm(attn_2, 1, hm_title = "Dev ex. 1, t = 2")
 attn_hm(attn_2, 2, hm_title = "Dev ex. 1, t = 3")
@@ -222,7 +291,7 @@ $$k_i = \sigma(\mathbf{w}_k \cdot [\mathbf{q}^t_i; \mathbf{h}^t_i])$$
 where $\mathbf{w}_k$ has dimensionality $|\mathbf{q}^t_i| + |\mathbf{h}^t_i|$.
 
 ```{r linear_both_attn, echo=FALSE, warning=FALSE}
-attn_0 <- read_attn("q_dialog_attn_word_hidden_incr_linear_both")
+attn_0 <- read_attn("q_dialog_attn_word_hidden_incr_linear_both_h250")
 
 attn_hm(attn_0, 1, hm_title = "Dev ex. 0, t = 2")
 attn_hm(attn_0, 2, hm_title = "Dev ex. 0, t = 3")
@@ -230,17 +299,100 @@ attn_hm(attn_0, 5, hm_title = "Dev ex. 0, t = 6")
 ```
 
 ```{r linear_both_attn_2, echo=FALSE, warning=FALSE}
-attn_2 <- read_attn("q_dialog_attn_word_hidden_incr_linear_both", 1)
+attn_2 <- read_attn("q_dialog_attn_word_hidden_incr_linear_both_h250", 1)
 
 attn_hm(attn_2, 1, hm_title = "Dev ex. 1, t = 2")
 attn_hm(attn_2, 2, hm_title = "Dev ex. 1, t = 3")
 attn_hm(attn_2, 5, hm_title = "Dev ex. 1, t = 6")
 ```
 
-#### Others?
+#### Other features for gates?
 
 Other features may be useful, e.g. the attention weights $\alpha_{ij}$ (both
 before and after softmax normalization). Additionally, right now these gates
 learn keep probabilities independently for each question token. It may be
 beneficial to use an RNN to output keep probabilities at each step, so there are
 dependencies between the tokens.
+
+## Other experiments
+
+Here I run experiments with the gate that looks only at the current word, just
+trying out different configurations:
+
+### Limiting max history
+
+Because there is a lot to attend to later in the dialog, here we limit the model
+so that it can only look at that past 2 timesteps.
+
+```{r linear_current_max_2, echo=FALSE, warning=FALSE}
+attn_0 <- read_attn("q_dialog_attn_word_hidden_incr_linear_current_h250_max_2")
+
+attn_hm(attn_0, 1, hm_title = "Dev ex. 0, t = 2")
+attn_hm(attn_0, 2, hm_title = "Dev ex. 0, t = 3")
+attn_hm(attn_0, 5, hm_title = "Dev ex. 0, t = 6")
+
+attn_2 <- read_attn("q_dialog_attn_word_hidden_incr_linear_current_h250_max_2", 1)
+
+attn_hm(attn_2, 1, hm_title = "Dev ex. 1, t = 2")
+attn_hm(attn_2, 2, hm_title = "Dev ex. 1, t = 3")
+attn_hm(attn_2, 5, hm_title = "Dev ex. 1, t = 6")
+```
+
+### Attending over answers
+
+Previously I did not augment answer representations because the code was a bit
+awkward; here I try that to see if that makes any difference.
+
+```{r attend_answers, echo=FALSE, warning=FALSE}
+attn_0 <- read_attn("q_dialog_attn_word_hidden_incr_linear_both_attend_answers")
+
+par(mfrow=c(3, 2))
+attn_hm(attn_0, 1, hm_title = "Dev ex. 0, t = 2")
+attn_hm(attn_0, 2, hm_title = "Dev ex. 0, t = 3")
+attn_hm(attn_0, 5, hm_title = "Dev ex. 0, t = 6")
+
+attn_2 <- read_attn("q_dialog_attn_word_hidden_incr_linear_both_attend_answers", 1)
+
+attn_hm(attn_2, 1, hm_title = "Dev ex. 1, t = 2")
+attn_hm(attn_2, 2, hm_title = "Dev ex. 1, t = 3")
+attn_hm(attn_2, 5, hm_title = "Dev ex. 1, t = 6")
+```
+
+### Different attention scoring functions
+
+#### No nonlinearity
+
+Same as scoring function above, *without* ReLU nonlinearity (so just comparing raw dot product)
+
+```{r bilinear, echo=FALSE, warning=FALSE}
+attn_0 <- read_attn("q_dialog_attn_word_hidden_incr_linear_current_abilinear")
+
+attn_hm(attn_0, 1, hm_title = "Dev ex. 0, t = 2")
+attn_hm(attn_0, 2, hm_title = "Dev ex. 0, t = 3")
+attn_hm(attn_0, 5, hm_title = "Dev ex. 0, t = 6")
+
+attn_2 <- read_attn("q_dialog_attn_word_hidden_incr_linear_current_abilinear", 1)
+
+attn_hm(attn_2, 1, hm_title = "Dev ex. 1, t = 2")
+attn_hm(attn_2, 2, hm_title = "Dev ex. 1, t = 3")
+attn_hm(attn_2, 5, hm_title = "Dev ex. 1, t = 6")
+```
+
+
+#### "Fully-aware" attention
+
+(Huang et al., 2018)
+
+```{r fully_aware, echo=FALSE, warning=FALSE}
+attn_0 <- read_attn("q_dialog_attn_word_hidden_incr_linear_current_afully_aware")
+
+attn_hm(attn_0, 1, hm_title = "Dev ex. 0, t = 2")
+attn_hm(attn_0, 2, hm_title = "Dev ex. 0, t = 3")
+attn_hm(attn_0, 5, hm_title = "Dev ex. 0, t = 6")
+
+attn_2 <- read_attn("q_dialog_attn_word_hidden_incr_linear_current_afully_aware", 1)
+
+attn_hm(attn_2, 1, hm_title = "Dev ex. 1, t = 2")
+attn_hm(attn_2, 2, hm_title = "Dev ex. 1, t = 3")
+attn_hm(attn_2, 5, hm_title = "Dev ex. 1, t = 6")
+```
