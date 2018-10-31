@@ -87,6 +87,12 @@ def get_args():
                        default='word_emb', help='How to compute attention over past dialog')
     group.add_argument('--q_dialog_attn_incr_merge', type=str, choices=['average', 'linear_current', 'linear_both'],
                        default='average', help='In the incremental case, how to average past and current representations')
+    group.add_argument('--q_dialog_attn_scoring', type=str, choices=['linear_relu', 'fully_aware', 'bilinear'],
+                       default='linear_relu', help='How to score interactions between hidden states (right now implented for word_hidden_incr only)')
+    group.add_argument('--attend_answers', type=str2bool, default=False,
+                       help='Attend to answers')
+    group.add_argument('--attn_hidden_size', type=int, default=250,
+                       help='Attention hidden size (for Q_DIALOG_ATTN only)')
     group.add_argument('--doc_dialog_history', type=str2bool, default=False, help='Whether to add historical averages of dialog (question AND answer tokens) to document.')
     group.add_argument('--doc_dialog_attn', type=str, choices=['q', 'word_emb', 'word_hidden'],
                        default='word_emb', help='How to compute attention over past dialog (q = same as q_dialog_attn)')

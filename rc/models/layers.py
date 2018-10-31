@@ -573,10 +573,26 @@ class IncrSeqAttnMatch(nn.Module):
     This is an incremental version of seqattnmatch. Firs
     """
     def __init__(self, input_size, merge_type='average', recency_bias=False,
-                 cuda=False, max_history=-1):
+                 cuda=False, max_history=-1, scoring='linear_relu',
+                 attend_answers=False, hidden_size=250):
         super(IncrSeqAttnMatch, self).__init__()
-        self.linear = nn.Linear(input_size, input_size)
         self.cuda = cuda
+
+        self.scoring = scoring
+        self.hidden_size = hidden_size
+
+        if self.scoring == 'linear_relu':
+            self.linear = nn.Linear(input_size, hidden_size)
+        elif self.scoring == 'fully_aware':
+            # https://arxiv.org/pdf/1711.07341.pdf
+            self.linear = nn.Linear(input_size, hidden_size)
+            self.diag = nn.Parameter(torch.diag(torch.rand(hidden_size, requires_grad=True)))
+        elif self.scoring == 'bilinear':
+            self.linear = nn.Linear(input_size, hidden_size)
+        else:
+            raise NotImplementedError("attn_type = {}".format(self.scoring))
+
+        self.attend_answers = attend_answers
 
         self.recency_bias = recency_bias
         if self.recency_bias:
@@ -607,103 +623,207 @@ class IncrSeqAttnMatch(nn.Module):
         Output shapes:
             matched_seq = batch * max_d_len * h
         """
-        # Project q and a
-        xq_proj = self.linear(xq_emb.view(-1, xq_emb.size(2))).view((xq_emb.shape[:2] + (-1, )))
-        xq_proj = F.relu(xq_proj)
-        xa_proj = self.linear(xa_emb.view(-1, xa_emb.size(2))).view((xa_emb.shape[:2] + (-1, )))
-        xa_proj = F.relu(xa_proj)
+        # All scoring mechanisms project through linear
+        xq_proj = self.project(xq_emb)
+        xa_proj = self.project(xa_emb)
 
         # Store augmented qa representations. Start with unedited t = 0.
         xqa_plus = [xq_emb[0], xa_emb[0]]
         xqa_plus_proj = [xq_proj[0], xa_proj[0]]
         xqa_mask_plus = [xq_mask[0], xa_mask[0]]
-        max_qa_len = xq_proj.shape[1] + xa_proj.shape[1]
+        max_q_len, max_a_len = xq_proj.shape[1], xa_proj.shape[1]
+
         if out_attention:
             out_scores = []
         # Loop through qa pairs
-        for t, (xq_t_proj, xa_t_proj, xq_t, xa_t) in enumerate(zip(xq_proj[1:], xa_proj[1:], xq_emb[1:], xa_emb[1:]), start=1):  # int, (max_q_len * h), (max_a_len * h)
+        # int, (max_q_len * k), (max_a_len * k), (max_q_len * h), (max_q_len * h)
+        for t, (xq_t_proj, xa_t_proj, xq_t, xa_t) in enumerate(zip(xq_proj[1:], xa_proj[1:],
+                                                                   xq_emb[1:], xa_emb[1:]), start=1):
+            # TODO: define self.augment which does all this, to reduce code reuse (for the answer)
             # Concat augmented qa pairs obtained up to this point.
             xqa_t = torch.cat(xqa_plus, 0)  # (history_len * h)
-            xqa_t_proj = torch.cat(xqa_plus_proj, 0)  # (history_len * h)
+            xqa_t_proj = torch.cat(xqa_plus_proj, 0)  # (history_len * k)
             xqa_mask_t = torch.cat(xqa_mask_plus, 0)  # (history_len * h)
             # Compute attention
-            scores = xq_t_proj.mm(xqa_t_proj.transpose(1, 0))  # (max_q_len, history_len)
+            scores = self.score(xq_t_proj, xqa_t_proj)  # (max_q_len, history_len)
 
             if self.recency_bias:
-                recency_weights_np = np.repeat(np.arange(t, 0, -1, dtype=np.float32), max_qa_len)
-                recency_weights = torch.tensor(recency_weights_np, requires_grad=False)
-                if self.cuda:
-                    recency_weights = recency_weights.cuda()
-                recency_weights = recency_weights * self.recency_weight
-                recency_weights = recency_weights.expand(scores.size())
+                recency_weights = self.recency_weights(t, max_q_len, max_a_len).expand(scores.size())
                 scores = scores + recency_weights
 
             if self.max_history > 0:
-                history_mask_np = np.repeat(np.arange(t, 0, -1, dtype=np.float32), max_qa_len)
-                history_mask_np = (history_mask_np > self.max_history).astype(np.uint8)
-                history_mask = torch.tensor(history_mask_np, requires_grad=False)
-                if self.cuda:
-                    history_mask = history_mask.cuda()
-                # Expand across tokens
-                history_mask = history_mask.expand(scores.size())
-                # Mask past history timesteps.
+                history_mask = self.max_history_mask(t, max_q_len, max_a_len).expand(scores.size())
                 scores.masked_fill_(history_mask, -float('inf'))
 
-            # Mask nonexistent qa tokens.
+            # Mask nonexistent qa tokens
             xqa_mask_t = xqa_mask_t.expand(scores.size())
             scores.masked_fill_(xqa_mask_t, -float('inf'))
+
+            # Normalize
             alpha = F.softmax(scores, dim=1)  # (max_q_len, history_len)
-            # Perform matrix multiplication with non-projected embeddings.
+
+            # Compute historical average embeddings
             xq_t_history = alpha.mm(xqa_t)  # (max_q_len, h)
-            # Merge xq with weighted history
-            if self.merge_type == 'average':
-                keep_p = torch.full((xq_t.shape[0], 1), 0.5, dtype=torch.float32,
-                                    requires_grad=False)
-                if self.cuda:
-                    keep_p = keep_p.cuda()
-            elif self.merge_type == 'linear_current':
-                # Look at current word only, learn a scalar keep value.
-                # Intuition is that it'll learn, e.g., that pronouns are more
-                # important to resolve.
-                keep_p = self.merge_layer(xq_t)
-                keep_p = torch.sigmoid(keep_p)
-            elif self.merge_type == 'linear_both':
-                # Look at current word and past attention, just concatted.
-                keep_p = self.merge_layer(torch.cat((xq_t, xq_t_history), 1))
-                keep_p = torch.sigmoid(keep_p)
-            else:
-                raise NotImplementedError("merge_type = {}".format(self.merge_type))
-            xq_t_plus = (keep_p * xq_t) + ((1.0 - keep_p) * xq_t_history)
+
+            # Merge current repr with history
+            xq_t_plus, keep_p = self.merge(xq_t, xq_t_history)
             # Reproject augmented vector.
-            xq_t_plus_proj = self.linear(xq_t_plus)
-            xq_t_plus_proj = F.relu(xq_t_plus_proj)
+            xq_t_plus_proj = self.project(xq_t_plus)
+            # Append augmented q to history
+            xqa_plus.append(xq_t_plus)
+            xqa_plus_proj.append(xq_t_plus_proj)
+            xqa_mask_plus.append(xq_mask[t])
+
             if out_attention:
                 alpha_masked = alpha[:, (1 - xqa_mask_t[0]).nonzero().squeeze()]
                 alpha_masked = torch.cat((keep_p, alpha_masked), 1)
                 out_scores.append(alpha_masked)
 
-            # Append augmented qa pair to history
-            # FIXME: For now just leave answers alone - later do attn as well?
-            xa_t_plus = xa_t
-            xa_t_plus_proj = xa_t_proj
-            xqa_plus.extend((xq_t_plus, xa_t_plus))
-            xqa_plus_proj.extend((xq_t_plus_proj, xa_t_plus_proj))
-            xqa_mask_plus.extend((xq_mask[t], xa_mask[t]))
-        # Concat and return augmented qa reprs (every 2nd repr)
-        if out_attention:
-            if not out_scores:
-                # (max_q_len, history_len)
-                out_scores = torch.zeros((1, xqa_plus[0].shape[0], xqa_plus[0].shape[0] + xqa_plus[1].shape[0]), dtype=np.float32)
-                if self.cuda:
-                    out_scores = out_scores.cuda()
+            if self.attend_answers:
+                # Reconcat with new augmented question
+                xqa_t = torch.cat(xqa_plus, 0)
+                xqa_t_proj = torch.cat(xqa_plus_proj, 0)
+                xqa_mask_t = torch.cat(xqa_mask_plus, 0)
+
+                # Score answer
+                scores = self.score(xa_t_proj, xqa_t_proj)
+
+                if self.recency_bias:
+                    recency_weights = self.recency_weights(t, max_q_len, max_a_len,
+                                                           answer=True).expand(scores.size())
+                    scores = scores + recency_weights
+
+                if self.max_history > 0:
+                    history_mask = self.max_history_mask(t, max_q_len, max_a_len,
+                                                         answer=True).expand(scores.size())
+                    scores.masked_fill_(history_mask, -float('inf'))
+
+                xqa_mask_t = xqa_mask_t.expand(scores.size())
+                scores.masked_fill_(xqa_mask_t, -float('inf'))
+
+                alpha = F.softmax(scores, dim=1)
+
+                xa_t_history = alpha.mm(xqa_t)
+
+                xa_t_plus, keep_p = self.merge(xa_t, xa_t_history)
+                xa_t_plus_proj = self.project(xa_t_plus)
             else:
-                out_scores = [s.transpose(1, 0) for s in out_scores]
-                out_scores = pad_sequence(out_scores, batch_first=True)
-                out_scores = out_scores.permute(0, 2, 1)
-                out_scores = torch.cat((torch.zeros_like(out_scores[0:1]), out_scores), 0)
-            return torch.stack(xqa_plus[::2]), out_scores
+                xa_t_plus = xa_t
+                xa_t_plus_proj = xa_t_proj
+
+            xqa_plus.append(xa_t_plus)
+            xqa_plus_proj.append(xa_t_plus_proj)
+            xqa_mask_plus.append(xa_mask[t])
+
+        # Concat and return augmented qa reprs (every 2nd repr)
+        xq_plus = torch.stack(xqa_plus[::2])
+        if out_attention:
+            out_scores = self.clean_out_scores(out_scores, max_q_len, max_a_len)
+            return xq_plus, out_scores
+        return xq_plus
+
+    def clean_out_scores(out_scores, max_q_len, max_a_len):
+        if not out_scores:
+            # Dummy zeros for qa len of first timestep
+            out_scores = torch.zeros((1, max_q_len, max_q_len + max_a_len), dtype=np.float32)
+            if self.cuda:
+                out_scores = out_scores.cuda()
+            return out_scores
+        out_scores = [s.transpose(1, 0) for s in out_scores]
+        out_scores = pad_sequence(out_scores, batch_first=True)
+        out_scores = out_scores.permute(0, 2, 1)
+        out_scores = torch.cat((torch.zeros_like(out_scores[0:1]), out_scores), 0)
+        return out_scores
+
+    def project(self, x):
+        """
+        Project vectors using the mechanism described by self.scoring.
+        """
+        # All attention mechanisms require linear projection.
+        if len(x.shape) == 3:
+            # Reshape first.
+            x_proj = self.linear(x.view(-1, x.size(2))).view((x.shape[:2] + (-1, )))
+        elif len(x.shape) == 2:
+            x_proj = self.linear(x)
         else:
-            return torch.stack(xqa_plus[::2])
+            raise ValueError("Incompatible shape for projection {}".format(x.shape))
+
+        if self.scoring == 'linear_relu':
+            x_proj = F.relu(x_proj)
+        elif self.scoring == 'bilinear':
+            # Don't do anything more, we just compute raw dot product.
+            pass
+        elif self.scoring == 'fully_aware':
+            x_proj = F.relu(x_proj)
+        else:
+            raise NotImplementedError
+        return x_proj
+
+    def score(self, x, y):
+        """
+        Score vectors according to self.scoring
+        """
+        if self.scoring == 'linear_relu':
+            return x.mm(y.transpose(1, 0))
+        elif self.scoring == 'bilinear':
+            return x.mm(y.transpose(1, 0))
+        elif self.scoring == 'fully_aware':
+            # Multiply x by diagonal matrix first.
+            x_diag = x.mm(self.diag)
+            return x_diag.mm(y.transpose(1, 0))
+        else:
+            raise NotImplementedError
+
+    def recency_weights(self, t, max_q_len, max_a_len, answer=False):
+        """
+        Return recency weights matrix for time t.
+        """
+        max_qa_len = max_q_len + max_a_len
+        recency_weights_np = np.repeat(np.arange(t, 0, -1, dtype=np.float32), max_qa_len)
+        if answer:
+            # Add zeros corresponding to current question.
+            recency_weights_np = np.concatenate((recency_weights_np, np.zeros(max_q_len, dtype=np.float32)))
+        recency_weights = torch.tensor(recency_weights_np, requires_grad=False)
+        if self.cuda:
+            recency_weights = recency_weights.cuda()
+        recency_weights = recency_weights * self.recency_weight
+        return recency_weights
+
+    def max_history_mask(self, t, max_q_len, max_a_len, answer=False):
+        """
+        Return maximum history mask for time t.
+        """
+        max_qa_len = max_q_len + max_a_len
+        history_mask_np = np.repeat(np.arange(t, 0, -1, dtype=np.float32), max_qa_len)
+        if answer:
+            # Add zeros corresponding to current question.
+            history_mask_np = np.concatenate((history_mask_np, np.zeros(max_q_len, dtype=np.float32)))
+        history_mask_np = (history_mask_np > self.max_history).astype(np.uint8)
+        history_mask = torch.tensor(history_mask_np, requires_grad=False)
+        if self.cuda:
+            history_mask = history_mask.cuda()
+        return history_mask
+
+    def merge(self, xq_t, xq_t_history):
+        if self.merge_type == 'average':
+            keep_p = torch.full((xq_t.shape[0], 1), 0.5, dtype=torch.float32,
+                                requires_grad=False)
+            if self.cuda:
+                keep_p = keep_p.cuda()
+        elif self.merge_type == 'linear_current':
+            # Look at current word only, learn a scalar keep value.
+            # Intuition is that it'll learn, e.g., that pronouns are more
+            # important to resolve.
+            keep_p = self.merge_layer(xq_t)
+            keep_p = torch.sigmoid(keep_p)
+        elif self.merge_type == 'linear_both':
+            # Look at current word and past attention, just concatted.
+            keep_p = self.merge_layer(torch.cat((xq_t, xq_t_history), 1))
+            keep_p = torch.sigmoid(keep_p)
+        else:
+            raise NotImplementedError("merge_type = {}".format(self.merge_type))
+        xq_t_plus = (keep_p * xq_t) + ((1.0 - keep_p) * xq_t_history)
+        return xq_t_plus, keep_p
 
 
 class BilinearSeqAttn(nn.Module):

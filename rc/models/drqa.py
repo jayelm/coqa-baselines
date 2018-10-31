@@ -75,7 +75,11 @@ class DrQA(nn.Module):
                     recency_bias=self.config['recency_bias'],
                     merge_type=self.config['q_dialog_attn_incr_merge'],
                     max_history=self.config['max_history'],
-                    cuda=self.config['cuda'])
+                    cuda=self.config['cuda'],
+                    scoring=self.config['q_dialog_attn_scoring'],
+                    attend_answers=self.config['attend_answers'],
+                    hidden_size=self.config['attn_hidden_size'],
+                )
             else:
                 raise NotImplementedError("q_dialog_attn = {}".format(self.config['q_dialog_attn']))
 
