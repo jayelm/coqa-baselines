@@ -155,6 +155,7 @@ class Model(object):
         ems = []
         all_predictions = []
         all_spans = []
+        all_ids = []
         ex_sizes = []
         for ex in exs:
             # Convey to the attn alyers that we want attention outputs by
@@ -181,6 +182,7 @@ class Model(object):
                 if out_predictions:
                     all_predictions.append(predictions)
                     all_spans.append(spans)
+                    all_ids.append([ex['id'] for _ in range(len(predictions))])
 
                 if out_attentions:
                     # Save attentions to file.
@@ -198,6 +200,7 @@ class Model(object):
             if out_predictions:
                 output['predictions'] = [item for sublist in all_predictions for item in sublist]
                 output['spans'] = [item for sublist in all_spans for item in sublist]
+                output['ids'] = [item for sublist in all_ids for item in sublist]
 
         if update:
             # Clear gradients and run backward
