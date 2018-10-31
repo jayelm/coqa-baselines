@@ -722,7 +722,7 @@ class IncrSeqAttnMatch(nn.Module):
             return xq_plus, out_scores
         return xq_plus
 
-    def clean_out_scores(out_scores, max_q_len, max_a_len):
+    def clean_out_scores(self, out_scores, max_q_len, max_a_len):
         if not out_scores:
             # Dummy zeros for qa len of first timestep
             out_scores = torch.zeros((1, max_q_len, max_q_len + max_a_len), dtype=np.float32)

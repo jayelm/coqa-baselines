@@ -68,6 +68,8 @@ def compute_eval_metric(eval_metric, predictions, ground_truths, cross_eval=True
     values = []
     for prediction, ground_truth_set in zip(predictions, ground_truths):
         if cross_eval and len(ground_truth_set) > 1:
+            # FIXME: Also return raw y/n scores so we can do error analysis
+            # better.
             _scores = []
             for i in range(len(ground_truth_set)):
                 _ground_truth_set = []

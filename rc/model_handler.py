@@ -139,10 +139,22 @@ class ModelHandler(object):
                                  out_predictions=self.config['out_predictions'],
                                  out_attentions=self.config['save_attn_weights'])
 
-        for ex in output:
-            _id = ex['id']
-            ex['id'] = _id[0]
-            ex['turn_id'] = _id[1]
+        if self.config['dialog_batched']:
+            # Slightly different id format
+            _id = None
+            turn = 0
+            for ex in output:
+                if ex['id'] != _id:
+                    _id = ex['id']
+                    turn = 0
+                ex['id'] = _id
+                ex['turn_id'] = turn
+                turn += 1
+        else:
+            for ex in output:
+                _id = ex['id']
+                ex['id'] = _id[0]
+                ex['turn_id'] = _id[1]
 
         if self.config['out_predictions']:
             output_file = os.path.join(self.dirname, Constants._PREDICTION_FILE)
@@ -197,7 +209,7 @@ class ModelHandler(object):
                 print('used_time: {:0.2f}s'.format(time.time() - start_time))
 
             if out_predictions:
-                for id, prediction, span in zip(input_batch['id'], res['predictions'], res['spans']):
+                for id, prediction, span in zip(res['ids'], res['predictions'], res['spans']):
                     output.append({'id': id,
                                    'answer': prediction,
                                    'span_start': span[0],
