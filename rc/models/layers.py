@@ -624,7 +624,6 @@ class IncrSeqAttnMatch(nn.Module):
         Output shapes:
             matched_seq = batch * max_d_len * h
         """
-        import ipdb; ipdb.set_trace()
         # Project vectors
         xq_proj = self.project(xq_emb)
         xa_proj = self.project(xa_emb)
