@@ -49,7 +49,8 @@ def _write_attn_to_file(ex, config, attn_type, attn, fp, rev_word_dict):
             for q_token_i, (q_token, q_m) in enumerate(zip(q, q_mask)):
                 if q_m.item():
                     break
-                this_token = '{}-{}-{}'.format(q_i, q_token_i, rev_word_dict[q_token])
+                this_token = '{}-{}-{}'.format(q_i, q_token_i,
+                                               rev_word_dict[q_token] if rev_word_dict[q_token] != ',' else '\\,')
                 attn_row = attn[q_i, q_token_i]
                 this_row = '{},{}'.format(this_token, ','.join(map(str, attn_row)))
                 fout.write(this_row)
