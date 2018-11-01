@@ -675,7 +675,7 @@ class IncrSeqAttnMatch(nn.Module):
             d_mask.append(xq_mask[t])
 
             if out_attention:
-                alpha_masked = alpha[:, (1 - xqa_mask_t[0]).nonzero().squeeze()]
+                alpha_masked = alpha[:, (1 - d_mask_t[0]).nonzero().squeeze()]
                 alpha_masked = torch.cat((keep_p, alpha_masked), 1)
                 out_scores.append(alpha_masked)
 
