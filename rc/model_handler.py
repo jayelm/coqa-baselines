@@ -160,6 +160,22 @@ class ModelHandler(object):
             output_file = os.path.join(self.dirname, Constants._PREDICTION_FILE)
             with open(output_file, 'w') as outfile:
                 json.dump(output, outfile, indent=4)
+                if self.config['out_predictions_csv']:
+                    import pandas as pd
+                    for o in output:
+                        o['gold_answer_1'], o['gold_answer_2'], o['gold_answer_3'], o['gold_answer_4'] = o['gold_answers']
+                    output_csv = pd.DataFrame(output)
+                    output_csv = output_csv[[
+                        'id', 'turn_id', 'span_start', 'span_end',
+                        'answer',
+                        'gold_answer_1',
+                        'gold_answer_2',
+                        'gold_answer_3',
+                        'gold_answer_4',
+                        'f1', 'em'
+                    ]]
+                    output_csv.to_csv(output_file.replace('.json', '.csv'),
+                                      index=False)
 
         test_f1 = self._dev_f1.mean()
         test_em = self._dev_em.mean()
@@ -209,11 +225,14 @@ class ModelHandler(object):
                 print('used_time: {:0.2f}s'.format(time.time() - start_time))
 
             if out_predictions:
-                for id, prediction, span in zip(res['ids'], res['predictions'], res['spans']):
+                for id, prediction, span, f1, em, ans in zip(res['ids'], res['predictions'], res['spans'], res['f1s'], res['ems'], res['answers']):
                     output.append({'id': id,
                                    'answer': prediction,
                                    'span_start': span[0],
-                                   'span_end': span[1]})
+                                   'span_end': span[1],
+                                   'f1': f1,
+                                   'em': em,
+                                   'gold_answers': ans})
         return output
 
     def report(self, step, loss, f1, em, mode='train'):

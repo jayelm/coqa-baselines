@@ -120,6 +120,7 @@ def get_args():
     group.add_argument('--max_answer_len', type=int, default=15, help='Set max answer length for decoding.')
     group.add_argument('--predict_train', type=str2bool, default=True, help='Whether to predict on training set.')
     group.add_argument('--out_predictions', type=str2bool, default=True, help='Whether to output predictions.')
+    group.add_argument('--out_predictions_csv', type=str2bool, default=True, help='Whether to output predictions in csv format (Requires pandas).')
     group.add_argument('--predict_raw_text', type=str2bool, default=True,
                        help='Whether to use raw text and offsets for prediction.')
     group.add_argument('--save_params', type=str2bool, default=True, help='Whether to save params.')

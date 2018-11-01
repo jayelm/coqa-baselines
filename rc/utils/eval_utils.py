@@ -81,7 +81,7 @@ def compute_eval_metric(eval_metric, predictions, ground_truths, cross_eval=True
         else:
             value = metric_max_over_ground_truths(fns[eval_metric], prediction, ground_truth_set)
         values.append(value)
-    return np.mean(values)
+    return np.mean(values), values
 
 
 def compute_f1_score(prediction, ground_truth):

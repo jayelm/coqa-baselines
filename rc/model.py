@@ -153,9 +153,12 @@ class Model(object):
         running_losses = []
         f1s = []
         ems = []
+        f1s_all = []
+        ems_all = []
         all_predictions = []
         all_spans = []
         all_ids = []
+        answers = []
         ex_sizes = []
         for ex in exs:
             # Convey to the attn alyers that we want attention outputs by
@@ -175,9 +178,12 @@ class Model(object):
 
             if (not update) or self.config['predict_train']:
                 predictions, spans = self.extract_predictions(ex, score_s, score_e)
-                this_f1, this_em = self.evaluate_predictions(predictions, ex['answers'])
+                this_f1, this_em, this_f1s, this_ems = self.evaluate_predictions(predictions, ex['answers'])
                 f1s.append(this_f1)
                 ems.append(this_em)
+                f1s_all.append(this_f1s)
+                ems_all.append(this_ems)
+                answers.append(ex['answers'])
                 ex_sizes.append(ex['batch_size'])
                 if out_predictions:
                     all_predictions.append(predictions)
@@ -193,6 +199,8 @@ class Model(object):
             # Do a weighted average of f1
             'f1': weighted_score_avg(f1s, ex_sizes),
             'em': weighted_score_avg(ems, ex_sizes),
+            'f1s': [item for sublist in f1s_all for item in sublist],
+            'ems': [item for sublist in ems_all for item in sublist],
             'loss': sum(running_loss_items) / (2 * sum(ex_sizes))
         }
 
@@ -201,6 +209,7 @@ class Model(object):
                 output['predictions'] = [item for sublist in all_predictions for item in sublist]
                 output['spans'] = [item for sublist in all_spans for item in sublist]
                 output['ids'] = [item for sublist in all_ids for item in sublist]
+                output['answers'] = [item for sublist in answers for item in sublist]
 
         if update:
             # Clear gradients and run backward
@@ -263,9 +272,9 @@ class Model(object):
         return raw_text[offsets[s_idx][0]: offsets[e_idx][1]], (offsets[s_idx][0], offsets[e_idx][1])
 
     def evaluate_predictions(self, predictions, answers):
-        f1_score = compute_eval_metric('f1', predictions, answers)
-        em_score = compute_eval_metric('em', predictions, answers)
-        return f1_score, em_score
+        f1_score, f1s = compute_eval_metric('f1', predictions, answers)
+        em_score, ems = compute_eval_metric('em', predictions, answers)
+        return f1_score, em_score, f1s, ems
 
     def save(self, dirname):
         params = {
