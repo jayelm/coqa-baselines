@@ -469,80 +469,32 @@ class IncrSeqAttnMatch(nn.Module):
             out_scores = []
         # Loop through qa pairs
         # int, (max_q_len * k), (max_a_len * k), (max_q_len * h), (max_q_len * h)
-        e = enumerate(zip(
-            xq_proj[1:], xa_proj[1:],
-            xq_emb[1:], xa_emb[1:]), start=1)
-        for t, (xq_t_proj, xa_t_proj, xq_t, xa_t) in e:
-            # TODO: define self.augment which does all this, to reduce code reuse (for the answer)
-            # Form dialog history up to this point.
-            d_plus_t = torch.cat(d_plus, 0)  # (history_len * h)
-            d_proj_t = torch.cat(d_proj, 0)  # (history_len * k)
-            d_mask_t = torch.cat(d_mask, 0)  # (history_len * h)
-
-            # Compute attention with non-ctx-sensitive embeddigs
-            scores = self.score(xq_t_proj, d_proj_t)  # (max_q_len, history_len)
-
-            if self.recency_bias:
-                recency_weights = self.recency_weights(t, max_q_len, max_a_len).expand(scores.size())
-                scores = scores + recency_weights
-
-            if self.max_history > 0:
-                history_mask = self.max_history_mask(t, max_q_len, max_a_len).expand(scores.size())
-                scores.masked_fill_(history_mask, -float('inf'))
-
-            # Mask nonexistent qa tokens
-            d_mask_t = d_mask_t.expand(scores.size())
-            scores.masked_fill_(d_mask_t, -float('inf'))
-
-            # Normalize
-            alpha = F.softmax(scores, dim=1)  # (max_q_len, history_len)
-
-            # Compute historical average embeddings
-            xq_t_history = alpha.mm(d_plus_t)  # (max_q_len, h)
-
-            # Merge current repr with history
-            xq_t_plus, keep_p = self.merge(xq_t, xq_t_history)
+        embs = zip(xq_emb[1:], xa_emb[1:], xq_proj[1:], xa_proj[1:])
+        for t, (xq_t, xa_t, xq_t_proj, xa_t_proj) in enumerate(embs, 1):
+            xq_t_plus, alpha, keep_p, dm = self.attend(
+                t, xq_t, xq_t_proj,
+                d_plus, d_proj, d_mask, max_q_len, max_a_len)
 
             # Append augmented q to history
             d_plus.append(xq_t_plus)
             d_proj.append(xq_t_proj)
             d_mask.append(xq_mask[t])
 
-            if out_attention:
-                alpha_masked = alpha[:, (1 - d_mask_t[0]).nonzero().squeeze()]
+            if out_attention:  # Save attention weights, remove nonexistent qa
+                alpha_masked = alpha[:, (1 - dm).nonzero().squeeze()]
                 alpha_masked = torch.cat((keep_p, alpha_masked), 1)
                 out_scores.append(alpha_masked)
 
             if self.attend_answers:
-                # Reconcat with new augmented question
-                d_plus_t = torch.cat(d_plus, 0)
-                d_proj_t = torch.cat(d_proj, 0)
-                d_mask_t = torch.cat(d_mask, 0)
-
-                # Score answer
-                scores = self.score(xa_t_proj, d_proj_t)
-
-                if self.recency_bias:
-                    recency_weights = self.recency_weights(t, max_q_len, max_a_len,
-                                                           answer=True).expand(scores.size())
-                    scores = scores + recency_weights
-
-                if self.max_history > 0:
-                    history_mask = self.max_history_mask(t, max_q_len, max_a_len,
-                                                         answer=True).expand(scores.size())
-                    scores.masked_fill_(history_mask, -float('inf'))
-
-                d_mask_t = d_mask_t.expand(scores.size())
-                scores.masked_fill_(d_mask_t, -float('inf'))
-
-                alpha = F.softmax(scores, dim=1)
-
-                xa_t_history = alpha.mm(d_plus_t)
-
-                xa_t_plus, keep_p = self.merge(xa_t, xa_t_history)
+                xa_t_plus, alpha, keep_p, dm = self.attend(
+                    t, xa_t, xa_t_proj,
+                    d_plus, d_proj, d_mask, max_q_len, max_a_len,
+                    answer=True
+                )
             else:
-                xa_t_plus = xa_t
+                xa_t_plus = xa_t  # Leave answer alone
 
+            # Append (possibly augmented) a to history
             d_plus.append(xa_t_plus)
             d_proj.append(xa_t_proj)
             if self.mask_answers:
@@ -556,6 +508,61 @@ class IncrSeqAttnMatch(nn.Module):
             out_scores = self.clean_out_scores(out_scores, max_q_len, max_a_len)
             return xq_plus, out_scores
         return xq_plus
+
+    def attend(self, t, x_t, x_proj,
+               d_plus, d_proj, d_mask, max_q_len, max_a_len,
+               answer=False):
+        """
+        Augment question vector with attention over dialog history up to this point.
+
+        Args:
+            t = timestep (int)
+            x_t = original question (or answer) embedding (x_len * h)
+            x_proj = projected question (or answer) embedding (x_len * k)
+            d_plus = augmented dialog history embeddings (List[torch.Tensor] of length t)
+            d_proj = projected dialog history embeddings (List[torch.Tensor] of length t)
+            d_mask = dialog history mask (List[torch.Tensor] of length t)
+            max_q_len = maximum question length (int)
+            max_a_len = maximum answer length (int)
+            answer = am I attending over answer? (bool)
+        Returns:
+            xq_t_plus = augmented question embedding (x_len * h)
+            alpha = attention scores (x_len * history_len)
+            keep_p = keep probability assigned to each embedding (x_len * 1)
+            dm = dialog mask for one timestep (history_len)
+        """
+        # Form dialog history up to this point.
+        d_plus_t = torch.cat(d_plus, 0)  # (history_len * h)
+        d_proj_t = torch.cat(d_proj, 0)  # (history_len * k)
+        d_mask_t = torch.cat(d_mask, 0)  # (history_len)
+
+        # Compute attention with non-ctx-sensitive embeddigs
+        scores = self.score(x_proj, d_proj_t)  # (max_q_len, history_len)
+
+        if self.recency_bias:
+            recency_weights = self.recency_weights(t, max_q_len, max_a_len,
+                                                   answer=answer).expand(scores.size())
+            scores = scores + recency_weights
+
+        if self.max_history > 0:
+            history_mask = self.max_history_mask(t, max_q_len, max_a_len,
+                                                 answer=answer).expand(scores.size())
+            scores.masked_fill_(history_mask, -float('inf'))
+
+        # Mask nonexistent qa tokens
+        d_mask_t = d_mask_t.expand(scores.size())
+        scores.masked_fill_(d_mask_t, -float('inf'))
+
+        # Normalize
+        alpha = F.softmax(scores, dim=1)  # (max_q_len, history_len)
+
+        # Compute historical average embeddings
+        h_t = alpha.mm(d_plus_t)  # (max_q_len, h)
+
+        # Merge current repr with history
+        x_t_plus, keep_p = self.merge(x_t, h_t)
+
+        return x_t_plus, alpha, keep_p, d_mask_t[0]
 
     def clean_out_scores(self, out_scores, max_q_len, max_a_len):
         if not out_scores:
