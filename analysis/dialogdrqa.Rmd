@@ -1,13 +1,11 @@
 ---
 title: "DialogDrQA"
 output:
-  pdf_document:
-    toc: yes
-  pdf: null
   html_document:
     number_sections: yes
     toc: yes
     toc_float: yes
+    toc_depth: 3
 ---
 
 ```{r setup, include=FALSE}
@@ -15,6 +13,8 @@ library(tidyverse)
 library(gplots)
 library(cowplot)
 library(RColorBrewer)
+library(jsonlite)
+library(knitr)
 
 knitr::opts_chunk$set(message=FALSE, warning=FALSE, echo=FALSE)
 
@@ -60,7 +60,7 @@ attn_hm <- function(attn, n = 1, max_history = -1, hm_title = "") {
     select(-`<QUESTION>`) %>%
     as.matrix
   
-  rownames(aq_m) <- aq$`<QUESTION>`
+  rownames(aq_m) <- paste0(aq$`<QUESTION>`, '-', round(aq$`<KEEP>`, 3))
   
   # Add by one since the math here is 1-indexed
   np <- n + 1
@@ -97,7 +97,7 @@ MODEL_NAMES <- c(
   'q_dialog_attn_word_hidden' = 'No Incremental'
 )
 
-load_metrics <- function(ms) {
+read_metrics <- function(ms) {
   all_metrics <- data.frame(
     epoch = NULL,
     value = NULL,
@@ -105,7 +105,7 @@ load_metrics <- function(ms) {
     model = NULL
   )
   for (m in ms) {
-    dir <- paste0('../exp/', m, '/metrics/metrics/')
+    dir <- paste0('../exp/', m, '/metrics/')
     dev_em_fp <- paste0(dir, 'dev_em_epoch.txt')
     dev_f1_fp <- paste0(dir, 'dev_f1_epoch.txt')
     dev_em <- scan(dev_em_fp, sep='\n')
@@ -123,11 +123,26 @@ load_metrics <- function(ms) {
 }
 ```
 
+```{r pred_func, include=FALSE}
+read_predictions <- function(expt) {
+  csv_fp <- paste0('../exp/', expt, '/predictions.csv')
+  message("Reading ", csv_fp)
+  read_csv(csv_fp)
+}
+read_coqa <- function(fp) {
+  data <- fromJSON(fp)$data
+  data$id <- 0:(length(data$id) - 1)
+  data$questions <- NULL
+  data
+}
+```
+
+
 
 In this work, we explore the role of attending to the dialog history when attempting to answer a question in a multi-turn QA setting (e.g. CoQA or QuAC). Here are the scores of the models explored in this section. TL;DR no major improvements yet.
 
 ```{r}
-metrics <- load_metrics(names(MODEL_NAMES))
+metrics <- read_metrics(names(MODEL_NAMES))
 ggplot(metrics, aes(x = epoch, y = value, group = model, color = model)) +
   geom_line() +
   xlab('Training Epoch') +
@@ -178,10 +193,17 @@ features aggregated across the dialog history up to time $t$, to generate
 representations $\mathbf{q}^{t+}, \mathbf{a}^{t+}$. At $t = 1$, there is no dialog history, thus we simply set $\mathbf{q}^{t+} = \mathbf{q}^{t}$ and $\mathbf{a}^{t+} = \mathbf{a}^{t}$.
 At $t > 1$, we have access to previous augmented representations $\mathbf{q}^{j+}, \mathbf{a}^{j+}$ for times $1 \leq j < t$.
 
-To augment $\mathbf{q}^{t}, \mathbf{a}^{t}$, we first form the *dialog history* $\mathbf{d}^{t+}$ up to time $t$ by concatenating past questions and answers:
+To augment $\mathbf{q}^{t}, \mathbf{a}^{t}$, we first form the *dialog history* $\mathbf{d}^{t}$ up to time $t$ by concatenating past questions and answers:
 
 \begin{align}
-\mathbf{d}^{t+} &= \{\mathbf{d}^{t+}_i, \dots, \mathbf{d}^{t+}_{h_t}\} \\ &= \{\mathbf{q}^{1+}; \mathbf{a}^{1+}; \dots; \mathbf{q}^{(t - 1)+}; \mathbf{a}^{(t - 1)+}\} \\
+\mathbf{d}^{t} &= \{\mathbf{d}^{t}_1, \dots, \mathbf{d}^{t}_{h_t}\} \\ &= \{\mathbf{q}^{1}; \mathbf{a}^{1}; \dots; \mathbf{q}^{(t - 1)}; \mathbf{a}^{(t - 1)}\} \\
+&= \{\mathbf{q}^{1}_1, \dots, \mathbf{q}^{1}_{l_1}, \mathbf{a}^{1}_1, \dots, \mathbf{a}^{1}_{n_1}, \dots, \dots, \mathbf{a}^{(t - 1)}_{n_{t - 1}}\}
+\end{align}
+
+While we compute attention with the unchanged hidden representations of the dialog history, crucially we perform augmentation with the already-augmented vectors $\mathbf{d}^{t+}$:
+
+\begin{align}
+\mathbf{d}^{t+} &= \{\mathbf{d}^{t+}_1, \dots, \mathbf{d}^{t+}_{h_t}\} \\ &= \{\mathbf{q}^{1+}; \mathbf{a}^{1+}; \dots; \mathbf{q}^{(t - 1)+}; \mathbf{a}^{(t - 1)+}\} \\
 &= \{\mathbf{q}^{1+}_1, \dots, \mathbf{q}^{1+}_{l_1}, \mathbf{a}^{1+}_1, \dots, \mathbf{a}^{1+}_{n_1}, \dots, \dots, \mathbf{a}^{(t - 1)+}_{n_{t - 1}}\}
 \end{align}
 
@@ -189,7 +211,7 @@ Then, for each token in the current question $\mathbf{q}^t_i$, we compute a weig
 $$
 \mathbf{h}^t_i = \sum_j \alpha_{ij} \mathbf{d}^{t+}_{j}
 $$
-where $\alpha_{ij}$ are attention scores between $\mathbf{q}^t_i$ and every past dialog token:
+where $\alpha_{ij}$ are attention scores between $\mathbf{q}^t_i$ and every past *unaugmented* dialog token:
 $$
 \alpha_{ij} \propto \exp(\text{ReLU}(\mathbf{W} \mathbf{q}^t_i)^T \cdot \text{ReLU}(\mathbf{W} \mathbf{d}^t_j) + \theta(t - t_j))
 $$
@@ -268,6 +290,7 @@ This gate looks only at the representation of the current word when deciding to 
 $$k_i = \sigma(\mathbf{w}_k \cdot \mathbf{q}^t_i)$$
 where $\mathbf{w}_k$ is a weight matrix of same dimensionality as $\mathbf{q}_t$ and $\sigma$ is the sigmoid function.
 
+
 ```{r linear_current_attn, echo=FALSE, warning=FALSE}
 attn_0 <- read_attn("q_dialog_attn_word_hidden_incr_linear_current_h250")
 
@@ -344,14 +367,13 @@ Previously I did not augment answer representations because the code was a bit
 awkward; here I try that to see if that makes any difference.
 
 ```{r attend_answers, echo=FALSE, warning=FALSE}
-attn_0 <- read_attn("q_dialog_attn_word_hidden_incr_linear_both_attend_answers")
+attn_0 <- read_attn("q_dialog_attn_both_aa")
 
-par(mfrow=c(3, 2))
 attn_hm(attn_0, 1, hm_title = "Dev ex. 0, t = 2")
 attn_hm(attn_0, 2, hm_title = "Dev ex. 0, t = 3")
 attn_hm(attn_0, 5, hm_title = "Dev ex. 0, t = 6")
 
-attn_2 <- read_attn("q_dialog_attn_word_hidden_incr_linear_both_attend_answers", 1)
+attn_2 <- read_attn("q_dialog_attn_both_aa", 1)
 
 attn_hm(attn_2, 1, hm_title = "Dev ex. 1, t = 2")
 attn_hm(attn_2, 2, hm_title = "Dev ex. 1, t = 3")
@@ -396,3 +418,51 @@ attn_hm(attn_2, 1, hm_title = "Dev ex. 1, t = 2")
 attn_hm(attn_2, 2, hm_title = "Dev ex. 1, t = 3")
 attn_hm(attn_2, 5, hm_title = "Dev ex. 1, t = 6")
 ```
+
+## Error analysis
+
+Randomly sample 5 questions/attention heatmaps from the model gated by current and historical representations:
+
+```{r error_analysis}
+set.seed(0)
+N_TO_ANALYZE <- 5
+EXPT_TO_ANALYZE <- 'q_dialog_attn_both_aa'
+
+coqa_dev <- read_coqa('../data/coqa/coqa-dev-v1.0.json')
+preds <- read_predictions(EXPT_TO_ANALYZE)
+
+wrong <- preds %>%
+  filter(f1 == 0) %>%
+  left_join(coqa_dev %>% select(id, story), by = c('id'))
+
+wrong_n <- wrong %>%
+  sample_n(N_TO_ANALYZE) %>%
+  arrange(id, turn_id)
+
+for (i in 1:N_TO_ANALYZE) {
+  wrong_ex <- wrong_n[i, ]
+  wrong_attn <- read_attn(EXPT_TO_ANALYZE, wrong_ex$id)
+  cat("**Ex ", wrong_ex$id, ", turn ", wrong_ex$turn_id, "**")
+  cat("\n\n")
+  cat(wrong_ex$story[1])
+  cat("\n\n")
+  cat("**Predicted answer:** ", wrong_ex$answer[1], ", **gold answer:** ", wrong_ex$gold_answer_1[1])
+  cat("\n\n")
+  retrieve_q(wrong_attn, n = wrong_ex$turn_id)
+  attn_hm(wrong_attn, n = wrong_ex$turn_id, max_history = 4)
+}
+```
+
+Does the model get yes/no questions more wrong than other questions?
+
+```{r}
+yesno <- wrong %>%
+  filter(answer %in% c('yes', 'no'))
+
+preds %>%
+  mutate(yesno = answer %in% c('yes', 'no')) %>%
+  group_by(yesno) %>%
+  summarise(mean_f1 = mean(f1)) %>%
+  kable
+```
+
