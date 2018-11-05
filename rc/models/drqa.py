@@ -142,6 +142,20 @@ class DrQA(nn.Module):
             bidirectional=True,
         )
 
+        # TEMP
+        self.answer_rnn = StackedBRNN(
+            input_size=q_input_size,
+            hidden_size=config['hidden_size'],
+            num_layers=config['num_layers'],
+            dropout_rate=config['dropout_rnn'],
+            dropout_output=config['dropout_rnn_output'],
+            variational_dropout=config['variational_dropout'],
+            concat_layers=config['concat_rnn_layers'],
+            rnn_type=self._RNN_TYPES[config['rnn_type']],
+            padding=config['rnn_padding'],
+            bidirectional=True,
+        )
+
         # Question merging
         if config['question_merge'] == 'self_attn':
             self.self_attn = LinearSeqAttn(question_hidden_size)
@@ -255,7 +269,7 @@ class DrQA(nn.Module):
                 # XXX: Reuse question RNN? Make new answer RNN? Run
                 # answers independently? Run question and answer pairs
                 # together? But then how to deal with augmentation?
-                answer_hiddens = self.question_rnn(xa_emb, xa_mask)
+                answer_hiddens = self.answer_rnn(xa_emb, xa_mask)
                 if ex['out_attentions'] and 'q_dialog_attn' in ex['out_attentions']:
                     question_hiddens, q_dialog_attn = self.q_dialog_match(
                         question_hiddens, answer_hiddens, xq_mask, xa_mask,
