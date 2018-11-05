@@ -78,6 +78,7 @@ class DrQA(nn.Module):
                     cuda=self.config['cuda'],
                     scoring=self.config['q_dialog_attn_scoring'],
                     attend_answers=self.config['attend_answers'],
+                    answer_marker_features=self.config['history_dialog_answer_f'],
                     hidden_size=self.config['attn_hidden_size'],
                 )
             else:

@@ -575,21 +575,27 @@ class IncrSeqAttnMatch(nn.Module):
     """
     def __init__(self, input_size, merge_type='average', recency_bias=False,
                  cuda=False, max_history=-1, scoring='linear_relu',
-                 attend_answers=False, hidden_size=250):
+                 attend_answers=False, answer_marker_features=False, hidden_size=250):
         super(IncrSeqAttnMatch, self).__init__()
         self.cuda = cuda
 
         self.scoring = scoring
         self.hidden_size = hidden_size
 
+        self.answer_marker_features = answer_marker_features
+
+        true_input_size = input_size
+        if self.answer_marker_features:
+            true_input_size += 2
+
         if self.scoring == 'linear_relu':
-            self.linear = nn.Linear(input_size, hidden_size)
+            self.linear = nn.Linear(true_input_size, hidden_size)
         elif self.scoring == 'fully_aware':
             # https://arxiv.org/pdf/1711.07341.pdf
-            self.linear = nn.Linear(input_size, hidden_size)
+            self.linear = nn.Linear(true_input_size, hidden_size)
             self.diag = nn.Parameter(torch.diag(torch.rand(hidden_size, requires_grad=True)))
         elif self.scoring == 'bilinear':
-            self.linear = nn.Linear(input_size, hidden_size)
+            self.linear = nn.Linear(true_input_size, hidden_size)
         else:
             raise NotImplementedError("attn_type = {}".format(self.scoring))
 
@@ -625,11 +631,21 @@ class IncrSeqAttnMatch(nn.Module):
             matched_seq = batch * max_d_len * h
         """
         # Project vectors
-        xq_proj = self.project(xq_emb)
-        xa_proj = self.project(xa_emb)
+        if self.answer_marker_features:
+            q_markers = onehot_markers(xq_emb, 2, 0, cuda=self.cuda)
+            a_markers = onehot_markers(xa_emb, 2, 1, cuda=self.cuda)
+
+            xq_emb_m = torch.cat((xq_emb, q_markers), 2)
+            xa_emb_m = torch.cat((xa_emb, a_markers), 2)
+        else:
+            xa_emb_m = xa_emb
+            xq_emb_m = xq_emb
+
+        xq_proj = self.project(xq_emb_m)
+        xa_proj = self.project(xa_emb_m)
 
         # Form dialog
-        d_plus = [xq_emb[0], xa_emb[0]]
+        d_plus = [xq_emb[0], xa_emb[0]]  # Don't use answer marker features here
         d_proj = [xq_proj[0], xa_proj[0]]
         d_mask = [xq_mask[0], xa_mask[0]]
         max_q_len, max_a_len = xq_proj.shape[1], xa_proj.shape[1]
@@ -638,8 +654,10 @@ class IncrSeqAttnMatch(nn.Module):
             out_scores = []
         # Loop through qa pairs
         # int, (max_q_len * k), (max_a_len * k), (max_q_len * h), (max_q_len * h)
-        for t, (xq_t_proj, xa_t_proj, xq_t, xa_t) in enumerate(zip(xq_proj[1:], xa_proj[1:],
-                                                                   xq_emb[1:], xa_emb[1:]), start=1):
+        e = enumerate(zip(
+            xq_proj[1:], xa_proj[1:],
+            xq_emb[1:], xa_emb[1:]), start=1)
+        for t, (xq_t_proj, xa_t_proj, xq_t, xa_t) in e:
             # TODO: define self.augment which does all this, to reduce code reuse (for the answer)
             # Form dialog history up to this point.
             d_plus_t = torch.cat(d_plus, 0)  # (history_len * h)
