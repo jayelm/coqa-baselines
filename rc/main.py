@@ -91,8 +91,10 @@ def get_args():
                        default='linear_relu', help='How to score interactions between hidden states (right now implented for word_hidden_incr only)')
     group.add_argument('--answer_rnn', type=str2bool, default=False,
                        help='Use separately parameterized RNN to encode answers')
+    group.add_argument('--mask_answers', type=str2bool, default=False,
+                       help='Don\'t attend to answers')
     group.add_argument('--attend_answers', type=str2bool, default=False,
-                       help='Attend to answers')
+                       help='Augment answers with attention')
     group.add_argument('--attn_hidden_size', type=int, default=250,
                        help='Attention hidden size (for Q_DIALOG_ATTN only)')
     group.add_argument('--doc_dialog_history', type=str2bool, default=False, help='Whether to add historical averages of dialog (question AND answer tokens) to document.')

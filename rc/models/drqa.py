@@ -77,6 +77,7 @@ class DrQA(nn.Module):
                     max_history=self.config['max_history'],
                     cuda=self.config['cuda'],
                     scoring=self.config['q_dialog_attn_scoring'],
+                    mask_answers=self.config['mask_answers'],
                     attend_answers=self.config['attend_answers'],
                     answer_marker_features=self.config['history_dialog_answer_f'],
                     hidden_size=self.config['attn_hidden_size'],

@@ -574,7 +574,7 @@ class IncrSeqAttnMatch(nn.Module):
     augmenting question vectors at each step.
     """
     def __init__(self, input_size, merge_type='average', recency_bias=False,
-                 cuda=False, max_history=-1, scoring='linear_relu',
+                 cuda=False, max_history=-1, scoring='linear_relu', mask_answers=False,
                  attend_answers=False, answer_marker_features=False, hidden_size=250):
         super(IncrSeqAttnMatch, self).__init__()
         self.cuda = cuda
@@ -599,6 +599,7 @@ class IncrSeqAttnMatch(nn.Module):
         else:
             raise NotImplementedError("attn_type = {}".format(self.scoring))
 
+        self.mask_answers = mask_answers
         self.attend_answers = attend_answers
 
         self.recency_bias = recency_bias
@@ -647,7 +648,11 @@ class IncrSeqAttnMatch(nn.Module):
         # Form dialog
         d_plus = [xq_emb[0], xa_emb[0]]  # Don't use answer marker features here
         d_proj = [xq_proj[0], xa_proj[0]]
-        d_mask = [xq_mask[0], xa_mask[0]]
+        if self.mask_answers:
+            # Mask all answers
+            d_mask = [xq_mask[0], torch.ones_like(xa_mask[0])]
+        else:
+            d_mask = [xq_mask[0], xa_mask[0]]
         max_q_len, max_a_len = xq_proj.shape[1], xa_proj.shape[1]
 
         if out_attention:
@@ -663,6 +668,7 @@ class IncrSeqAttnMatch(nn.Module):
             d_plus_t = torch.cat(d_plus, 0)  # (history_len * h)
             d_proj_t = torch.cat(d_proj, 0)  # (history_len * k)
             d_mask_t = torch.cat(d_mask, 0)  # (history_len * h)
+
             # Compute attention with non-ctx-sensitive embeddigs
             scores = self.score(xq_t_proj, d_proj_t)  # (max_q_len, history_len)
 
@@ -729,7 +735,10 @@ class IncrSeqAttnMatch(nn.Module):
 
             d_plus.append(xa_t_plus)
             d_proj.append(xa_t_proj)
-            d_mask.append(xa_mask[t])
+            if self.mask_answers:
+                d_mask.append(torch.ones_like(xa_mask[t]))
+            else:
+                d_mask.append(xa_mask[t])
 
         # Concat and return augmented qa reprs (every 2nd repr)
         xq_plus = torch.stack(d_plus[::2])
