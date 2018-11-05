@@ -89,6 +89,8 @@ def get_args():
                        default='average', help='In the incremental case, how to average past and current representations')
     group.add_argument('--q_dialog_attn_scoring', type=str, choices=['linear_relu', 'fully_aware', 'bilinear'],
                        default='linear_relu', help='How to score interactions between hidden states (right now implented for word_hidden_incr only)')
+    group.add_argument('--answer_rnn', type=str2bool, default=False,
+                       help='Use separately parameterized RNN to encode answers')
     group.add_argument('--attend_answers', type=str2bool, default=False,
                        help='Attend to answers')
     group.add_argument('--attn_hidden_size', type=int, default=250,
