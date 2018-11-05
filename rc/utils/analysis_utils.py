@@ -35,7 +35,7 @@ def _write_attn_to_file(ex, config, attn_type, attn, fp, rev_word_dict):
             if r != last_r:
                 last_r = r
                 curr_i = 0
-            full_d_history.append('"{}-{}-{}"'.format(r, curr_i, rev_word_dict[last_d])
+            full_d_history.append('"{}-{}-{}"'.format(r, curr_i, rev_word_dict[last_d]))
             curr_i += 1
         header = '"<QUESTION>",' + ','.join(full_d_history)
         fout.write(header)
