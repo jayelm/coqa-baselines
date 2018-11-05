@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from .layers import SeqAttnMatch, StackedBRNN, LinearSeqAttn, BilinearSeqAttn, SentenceHistoryAttn, QAHistoryAttn, QAHistoryAttnBilinear, DialogSeqAttnMatch, IncrSeqAttnMatch
+from .layers import SeqAttnMatch, StackedBRNN, LinearSeqAttn, BilinearSeqAttn, DialogSeqAttnMatch, IncrSeqAttnMatch
 from .layers import weighted_avg, uniform_weights, dropout
 
 
