@@ -32,29 +32,35 @@ class StackedBRNN(nn.Module):
                                       batch_first=True,
                                       bidirectional=bidirectional))
 
-    def forward(self, x, x_mask):
+    def forward(self, x, x_mask, stateful=False, state=None):
         """Can choose to either handle or ignore variable length sequences.
         Always handle padding in eval.
         """
+        if stateful and x.shape[0] != 1:
+            raise NotImplementedError("Stateful currently only works for length 1 inputs")
         # Pad if we care or if its during eval.
         if self.padding or self.return_single_timestep or not self.training:
-            return self._forward_padded(x, x_mask)
+            return self._forward_padded(x, x_mask, stateful=stateful, state=state)
         # We don't care.
-        return self._forward_unpadded(x, x_mask)
+        return self._forward_unpadded(x, x_mask, stateful=stateful, state=state)
 
-    def _forward_unpadded(self, x, x_mask):
+    def _forward_unpadded(self, x, x_mask, stateful=False, state=None):
         """Faster encoding that ignores any padding."""
 
         # Encode all layers
         outputs = [x]
+        if stateful:
+            hiddens = []
         for i in range(self.num_layers):
             rnn_input = outputs[-1]
             # Apply dropout to hidden input
             rnn_input = dropout(rnn_input, self.dropout_rate,
                                 shared_axes=[1] if self.variational_dropout else [], training=self.training)
             # Forward
-            rnn_output = self.rnns[i](rnn_input)[0]
+            rnn_output, rnn_hidden = self.rnns[i](rnn_input, state)
             outputs.append(rnn_output)
+            if stateful:
+                hiddens.append(rnn_hidden)
 
         # Concat hidden layers
         if self.concat_layers:
@@ -66,13 +72,16 @@ class StackedBRNN(nn.Module):
         if self.dropout_output:
             output = dropout(output, self.dropout_rate,
                              shared_axes=[1] if self.variational_dropout else [], training=self.training)
+        if stateful:
+            return output, hiddens[0]
         return output
 
-    def _forward_padded(self, x, x_mask):
+    def _forward_padded(self, x, x_mask, stateful=False, state=None):
         """Slower (significantly), but more precise,
         encoding that handles padding."""
         # Compute sorted sequence lengths
-        lengths = x_mask.eq(0).long().sum(1).squeeze()
+        #  lengths = x_mask.eq(0).long().sum(1).squeeze()
+        lengths = x_mask.eq(0).long().sum(1)
         _, idx_sort = torch.sort(lengths, dim=0, descending=True)
         _, idx_unsort = torch.sort(idx_sort, dim=0)
 
@@ -82,6 +91,8 @@ class StackedBRNN(nn.Module):
 
         # Encode all layers
         outputs, single_outputs = [rnn_input], []
+        if stateful:
+            hiddens = []
         for i in range(self.num_layers):
             rnn_input = outputs[-1]
 
@@ -92,11 +103,13 @@ class StackedBRNN(nn.Module):
             # Pack it
             rnn_input = nn.utils.rnn.pack_padded_sequence(rnn_input, lengths, batch_first=True)
             # Run it
-            rnn_output, (hn, _) = self.rnns[i](rnn_input)
+            rnn_output, (hn, cn) = self.rnns[i](rnn_input, state)
             # Unpack it
             rnn_output = nn.utils.rnn.pad_packed_sequence(rnn_output, batch_first=True)[0]
             single_outputs.append(hn[-1])
             outputs.append(rnn_output)
+            if stateful:
+                hiddens.append((hn, cn))
 
         if self.return_single_timestep:
             output = single_outputs[-1]
@@ -113,6 +126,8 @@ class StackedBRNN(nn.Module):
         if self.dropout_output and self.dropout_rate > 0:
             output = dropout(output, self.dropout_rate,
                              shared_axes=[1] if self.variational_dropout else [], training=self.training)
+        if stateful:
+            return output, hiddens[0]
         return output
 
 
@@ -488,9 +503,7 @@ class IncrSeqAttnMatch(nn.Module):
             if self.attend_answers:
                 xa_t_plus, alpha, keep_p, dm = self.attend(
                     t, xa_t, xa_t_proj,
-                    d_plus, d_proj, d_mask, max_q_len, max_a_len,
-                    answer=True
-                )
+                    d_plus, d_proj, d_mask, max_q_len, max_a_len)
             else:
                 xa_t_plus = xa_t  # Leave answer alone
 
@@ -510,8 +523,7 @@ class IncrSeqAttnMatch(nn.Module):
         return xq_plus
 
     def attend(self, t, x_t, x_proj,
-               d_plus, d_proj, d_mask, max_q_len, max_a_len,
-               answer=False):
+               d_plus, d_proj, d_mask, max_q_len, max_a_len):
         """
         Augment question vector with attention over dialog history up to this point.
 
@@ -524,7 +536,6 @@ class IncrSeqAttnMatch(nn.Module):
             d_mask = dialog history mask (List[torch.Tensor] of length t)
             max_q_len = maximum question length (int)
             max_a_len = maximum answer length (int)
-            answer = am I attending over answer? (bool)
         Returns:
             xq_t_plus = augmented question embedding (x_len * h)
             alpha = attention scores (x_len * history_len)
@@ -540,13 +551,11 @@ class IncrSeqAttnMatch(nn.Module):
         scores = self.score(x_proj, d_proj_t)  # (max_q_len, history_len)
 
         if self.recency_bias:
-            recency_weights = self.recency_weights(t, max_q_len, max_a_len,
-                                                   answer=answer).expand(scores.size())
+            recency_weights = self.recency_weights(t, d_mask).expand(scores.size())
             scores = scores + recency_weights
 
         if self.max_history > 0:
-            history_mask = self.max_history_mask(t, max_q_len, max_a_len,
-                                                 answer=answer).expand(scores.size())
+            history_mask = self.max_history_mask(t, d_mask).expand(scores.size())
             scores.masked_fill_(history_mask, -float('inf'))
 
         # Mask nonexistent qa tokens
@@ -616,31 +625,43 @@ class IncrSeqAttnMatch(nn.Module):
         else:
             raise NotImplementedError
 
-    def recency_weights(self, t, max_q_len, max_a_len, answer=False):
+    def recency_weights(self, t, d_mask_l):
         """
         Return recency weights matrix for time t.
         """
-        max_qa_len = max_q_len + max_a_len
-        recency_weights_np = np.repeat(np.arange(t, 0, -1, dtype=np.float32), max_qa_len)
-        if answer:
-            # Add zeros corresponding to current question.
-            recency_weights_np = np.concatenate((recency_weights_np, np.zeros(max_q_len, dtype=np.float32)))
+        r_weights = []
+        qa_counter = 0
+        past_t = 0
+        for m in d_mask_l:
+            r_weights.append(np.full(m.shape[0], past_t, dtype=np.float32))
+            qa_counter += 1
+            if (qa_counter % 2) == 0:
+                past_t += 1
+
+        recency_weights_np = np.concatenate(r_weights)
+        recency_weights_np = t - recency_weights_np
         recency_weights = torch.tensor(recency_weights_np, requires_grad=False)
         if self.cuda:
             recency_weights = recency_weights.cuda()
         recency_weights = recency_weights * self.recency_weight
         return recency_weights
 
-    def max_history_mask(self, t, max_q_len, max_a_len, answer=False):
+    def max_history_mask(self, t, d_mask_l):
         """
         Return maximum history mask for time t.
         """
-        max_qa_len = max_q_len + max_a_len
-        history_mask_np = np.repeat(np.arange(t, 0, -1, dtype=np.float32), max_qa_len)
-        if answer:
-            # Add zeros corresponding to current question.
-            history_mask_np = np.concatenate((history_mask_np, np.zeros(max_q_len, dtype=np.float32)))
-        history_mask_np = (history_mask_np > self.max_history).astype(np.uint8)
+        r_weights = []
+        qa_counter = 0
+        past_t = 0
+        for m in d_mask_l:
+            r_weights.append(np.full(m.shape[0], past_t, dtype=np.float32))
+            qa_counter += 1
+            if (qa_counter % 2) == 0:
+                past_t += 1
+
+        recency_weights_np = np.concatenate(r_weights)
+        recency_weights_np = t - recency_weights_np
+        history_mask_np = (recency_weights_np > self.max_history).astype(np.uint8)
         history_mask = torch.tensor(history_mask_np, requires_grad=False)
         if self.cuda:
             history_mask = history_mask.cuda()
@@ -666,6 +687,154 @@ class IncrSeqAttnMatch(nn.Module):
             raise NotImplementedError("merge_type = {}".format(self.merge_type))
         xq_t_plus = (keep_p * xq_t) + ((1.0 - keep_p) * xq_t_history)
         return xq_t_plus, keep_p
+
+
+class FullyIncrSeqAttnMatch(IncrSeqAttnMatch):
+    def encode_and_project(self, drnn, x_emb, x_mask,
+                           answer=False,
+                           past_drnn_state=None):
+        """
+        Encode and project vectors
+        """
+        # Zero out backward pass of cell state.
+        if past_drnn_state is not None:
+            past_drnn_state = zero_backward_pass(past_drnn_state, len(drnn.rnns), )
+        assert len(x_emb.shape) == 2, "Must be 2d (no singleton batch)"
+        # Unsqueeze embeddings. 1 x ... singleton batch
+        x_emb = x_emb.unsqueeze(0)
+        x_mask = x_mask.unsqueeze(0)
+
+        x_h, drnn_state = drnn(x_emb, x_mask, stateful=True, state=past_drnn_state)
+
+        if self.answer_marker_features:
+            # Add markers
+            markers = onehot_markers(x_h, 2, 1 if answer else 0, cuda=self.cuda)
+
+            x_h_m = torch.cat((x_h, markers), 2)
+        else:
+            x_h_m = x_h
+
+        x_proj = self.project(x_h_m)
+
+        # Re-squeeze
+        x_proj = x_proj.squeeze(0)
+        x_h = x_h.squeeze(0)
+
+        return x_h, x_proj, drnn_state
+
+    def reencode_dialog(self, drnn, d_plus, d_mask):
+        """
+        Re-encode the dialog history, starting with an empty initial state.
+        """
+        # XXX: Then set padding=False in question rnn
+        d_plus = torch.cat(d_plus, 0).unsqueeze(0)
+        d_mask_t = torch.cat(d_mask, 0).unsqueeze(0)
+        drnn_out, drnn_state = drnn(d_plus, d_mask_t, stateful=True, state=None)
+        drnn_out = drnn_out.squeeze(0)
+        return drnn_out, drnn_state
+
+    def forward(self, drnn, xq_emb, xa_emb, xq_mask, xa_mask,
+                out_attention=False):
+        """Input shapes:
+            drnn = torch.nn.rnn (dialog encoder)
+            xq_emb = batch * max_q_len * h  (document)
+            xa_emb = batch * max_a_len * h  (document)
+            xq_mask = batch * max_q_len * h  (document)
+            xa_mask = batch * max_a_len * h  (document)
+        Output shapes:
+            matched_seq = batch * max_d_len * h
+        """
+        # Unpad
+        xq_emb, xq_mask, xq_emb_len = unpad(xq_emb, xq_mask)
+        xa_emb, xa_mask, xa_emb_len = unpad(xa_emb, xa_mask)
+        # Run rnn on time 0 (no history)
+        xq_h_0, xq_proj_0, drnn_state = self.encode_and_project(
+            drnn, xq_emb[0], xq_mask[0])
+        xa_h_0, xa_proj_0, drnn_state = self.encode_and_project(
+            drnn, xa_emb[0], xa_mask[0], past_drnn_state=drnn_state)
+
+        # Form dialog
+        d_plus = [xq_h_0, xa_h_0]
+        d_proj = [xq_proj_0, xa_proj_0]
+        # Used to encode dialog the same regardless of answer masking
+        d_unmask = [xq_mask[0], xa_mask[0]]
+        if self.mask_answers:
+            d_mask = [xq_mask[0], torch.ones_like(xa_mask[0])]
+        else:
+            d_mask = [xq_mask[0], xa_mask[0]]
+        max_q_len, max_a_len = xq_proj_0.shape[0], xa_proj_0.shape[0]
+
+        if out_attention:
+            out_scores = []
+
+        # Loop through qa pairs
+        embs = zip(xq_emb[1:], xa_emb[1:], xq_mask[1:], xa_mask[1:])
+        for t, (xq_t, xa_t, xq_t_mask, xa_t_mask) in enumerate(embs, 1):
+            xq_t_h, xq_t_proj, drnn_state = self.encode_and_project(
+                drnn, xq_t, xq_t_mask,
+                answer=False,
+                past_drnn_state=drnn_state
+            )
+
+            # Project and augment this question repr
+            xq_t_plus, alpha, keep_p, dm = self.attend(
+                t, xq_t_h, xq_t_proj,
+                d_plus, d_proj, d_mask, max_q_len, max_a_len
+            )
+
+            d_plus.append(xq_t_plus)
+            d_proj.append(xq_t_proj)
+            d_mask.append(xq_t_mask)
+            d_unmask.append(xq_t_mask)
+
+            # Add this repr and re-encode to obtain new hidden state
+            if out_attention:  # Save attention weights, remove nonexistent qa
+                alpha_masked = torch.cat((keep_p, alpha), 1)
+                out_scores.append(alpha_masked)
+
+            xa_t_h, xa_t_proj, drnn_state = self.encode_and_project(
+                drnn, xa_t, xa_t_mask,
+                answer=True,
+                past_drnn_state=drnn_state
+            )
+            if self.attend_answers:
+                xa_t_plus, alpha, keep_p, dm = self.attend(
+                    t, xa_t_h, xa_t_proj,
+                    d_plus, d_proj, d_mask, max_q_len, max_a_len
+                )
+            else:
+                xa_t_plus = xa_t_h  # Leave answer alone
+
+            # Append (possibly augmented) a to history
+            d_plus.append(xa_t_plus)
+            d_proj.append(xa_t_proj)
+            if self.mask_answers:
+                d_mask.append(torch.ones_like(xa_t_mask))
+            else:
+                d_mask.append(xa_t_mask)
+            d_unmask.append(xa_t_mask)
+
+        # Re-encode one last time so all history carries through.
+        # Extract questions only
+        #  drnn_hiddens, _ = self.reencode_dialog(drnn, d_plus, d_unmask)
+
+        xq_plus = nn.utils.rnn.pad_sequence(d_plus[::2], batch_first=True)
+
+        # Index into drnn_array
+        #  qs = []
+        #  q_i = 0
+        #  for qm, am in zip(d_unmask[::2], d_unmask[1::2]):
+            #  q_len = qm.shape[0]
+            #  a_len = am.shape[0]
+            #  qs.append(drnn_hiddens[q_i:q_i+q_len])
+            #  q_i += q_len
+            #  q_i += a_len
+
+        #  xq_plus = nn.utils.rnn.pad_sequence(qs, batch_first=True)
+        if out_attention:
+            out_scores = self.clean_out_scores(out_scores, max_q_len, max_a_len)
+            return xq_plus, out_scores
+        return xq_plus
 
 
 class BilinearSeqAttn(nn.Module):
@@ -789,3 +958,38 @@ def onehot_markers(emb, n_total, n_on, cuda=False):
             markers_list.append(zeros_markers)
 
     return torch.cat(markers_list, 2)
+
+def unpad(x, x_mask):
+    """
+    Unpad a batch of sequences by selecting elements not masked by x_mask.
+    Returns a list of sequences and their corresponding lengths
+    """
+    x_unp = []
+    x_unp_mask = []
+    x_unp_len = []
+    for seq, seq_mask in zip(x, x_mask):
+        seq_unp = seq[(1 - seq_mask)]
+        x_unp.append(seq_unp)
+        x_unp_mask.append(seq_mask[1 - seq_mask])
+        x_unp_len.append(seq_unp.shape[0])
+    return x_unp, x_unp_mask, x_unp_len
+
+def zero_backward_pass(past_drnn_state, num_layers):
+    """
+    Zero the backwards direction of an LSTM cell state. assumes drnn state is length 1.
+    """
+    h_n, c_n = past_drnn_state
+    # Keep first (forward direction) only
+    h_n_bi = h_n.view(num_layers, 2, 1, -1)
+    c_n_bi = c_n.view(num_layers, 2, 1, -1)
+    h_n_fwd = h_n_bi[:, 0:1, :, :]
+    c_n_fwd = c_n_bi[:, 0:1, :, :]
+    z = torch.zeros_like(h_n_fwd)
+
+    h_n_new_bi = torch.cat((h_n_fwd, z), 1)
+    c_n_new_bi = torch.cat((c_n_fwd, z), 1)
+
+    h_n_new = h_n_new_bi.view(num_layers * 2, 1, -1)
+    c_n_new = c_n_new_bi.view(num_layers * 2, 1, -1)
+
+    return (h_n_new, c_n_new)

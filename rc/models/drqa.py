@@ -1,8 +1,10 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from .layers import SeqAttnMatch, StackedBRNN, LinearSeqAttn, BilinearSeqAttn, DialogSeqAttnMatch, IncrSeqAttnMatch
-from .layers import weighted_avg, uniform_weights, dropout
+from .layers import SeqAttnMatch, StackedBRNN, LinearSeqAttn, BilinearSeqAttn
+# Dialog attention
+from .layers import DialogSeqAttnMatch, IncrSeqAttnMatch, FullyIncrSeqAttnMatch
+from .layers import weighted_avg, uniform_weights, dropout, onehot_markers
 
 
 class DrQA(nn.Module):
@@ -19,7 +21,9 @@ class DrQA(nn.Module):
         q_input_size = input_w_dim
         if self.config['q_dialog_history'] and self.config['q_dialog_attn'] == 'word_emb':
             q_input_size += input_w_dim
-        a_input_size = input_w_dim
+        if self.config['qa_emb_markers']:
+            q_input_size += 2
+
         if self.config['fix_embeddings']:
             for p in self.w_embedding.parameters():
                 p.requires_grad = False
@@ -71,6 +75,19 @@ class DrQA(nn.Module):
                                                    recency_bias=self.config['recency_bias'])
             elif self.config['q_dialog_attn'] == 'word_hidden_incr':
                 self.q_dialog_match = IncrSeqAttnMatch(
+                    question_hidden_size,
+                    recency_bias=self.config['recency_bias'],
+                    merge_type=self.config['q_dialog_attn_incr_merge'],
+                    max_history=self.config['max_history'],
+                    cuda=self.config['cuda'],
+                    scoring=self.config['q_dialog_attn_scoring'],
+                    mask_answers=self.config['mask_answers'],
+                    attend_answers=self.config['attend_answers'],
+                    answer_marker_features=self.config['history_dialog_answer_f'],
+                    hidden_size=self.config['attn_hidden_size'],
+                )
+            elif self.config['q_dialog_attn'] == 'fully_incr':
+                self.q_dialog_match = FullyIncrSeqAttnMatch(
                     question_hidden_size,
                     recency_bias=self.config['recency_bias'],
                     merge_type=self.config['q_dialog_attn_incr_merge'],
@@ -207,6 +224,12 @@ class DrQA(nn.Module):
 
         # ==== QUESTION ====
         qrnn_input = xq_emb
+        if self.config['qa_emb_markers']:
+            if not (self.config['q_dialog_history'] and self.config['q_dialog_attn'] == 'fully_incr'):
+                raise NotImplementedError
+            markers = onehot_markers(qrnn_input, 2, 0, cuda=self.config['cuda'])
+            qrnn_input = torch.cat((qrnn_input, markers), 2)
+
         # Augment question RNN input with attention over dialog history
         if self.config['q_dialog_history'] and self.config['q_dialog_attn'] == 'word_emb':
             if ex['out_attentions'] and 'q_dialog_attn' in ex['out_attentions']:
@@ -222,18 +245,13 @@ class DrQA(nn.Module):
                                                              xq_mask, xa_mask)
             qrnn_input = torch.cat((qrnn_input, xdialog_weighted_emb_q), 2)
 
-        # Encode question with RNN + merge hiddens
-        question_hiddens = self.question_rnn(qrnn_input, xq_mask)
-
         if self.config['q_dialog_history']:
-            # Re-use question rnn to encode dialog history (concatted qs and as)
-            # For each time t, we need to re-run RNN on dialog history separately
-            # from 1 ... t - 1, because BiLSTMs which let time travel backwards.
-            # Because of this extra computation we can use standard SeqAttnMatch,
-            # not DialogSeqAttnMatch which handles time travel.
-            # First q has no access to dialog history
-            first_zeros = torch.zeros_like(question_hiddens[0:1], requires_grad=False)
             if self.config['q_dialog_attn'] == 'word_hidden':
+                question_hiddens = self.question_rnn(qrnn_input, xq_mask)
+
+                # First q has no access to dialog history
+                first_zeros = torch.zeros_like(question_hiddens[0:1], requires_grad=False)
+
                 if question_hiddens.shape[0] == 1:
                     # That's all you get
                     dialog_weighted_hidden_q = first_zeros
@@ -266,6 +284,7 @@ class DrQA(nn.Module):
                 # FIXME: Do we need one more LSTM layer to integrate this?
                 question_hiddens = torch.cat((question_hiddens, dialog_weighted_hidden_q), 2)
             elif self.config['q_dialog_attn'] == 'word_hidden_incr':
+                question_hiddens = self.question_rnn(qrnn_input, xq_mask)
                 xa_emb = self.w_embedding(ex['xa'])
                 xa_mask = ex['xa_mask']
                 # XXX: Reuse question RNN? Make new answer RNN? Run
@@ -288,8 +307,27 @@ class DrQA(nn.Module):
                         question_hiddens, answer_hiddens, xq_mask, xa_mask,
                         out_attention=False
                     )
+            elif self.config['q_dialog_attn'] == 'fully_incr':
+                xa_emb = self.w_embedding(ex['xa'])
+                if self.config['qa_emb_markers']:
+                    markers = onehot_markers(xa_emb, 2, 1, cuda=self.config['cuda'])
+                xa_emb = torch.cat((xa_emb, markers), 2)
+                if ex['out_attentions'] and 'q_dialog_attn' in ex['out_attentions']:
+                    question_hiddens, q_dialog_attn = self.q_dialog_match(
+                        self.question_rnn, qrnn_input, xa_emb, xq_mask, xa_mask,
+                        out_attention=True
+                    )
+                    out_attentions['q_dialog_attn'] = q_dialog_attn
+                else:
+                    # This module completely replaces existing question hiddens.
+                    question_hiddens = self.q_dialog_match(
+                        self.question_rnn, qrnn_input, xa_emb, xq_mask, xa_mask,
+                        out_attention=False
+                    )
             else:
                 raise NotImplementedError
+        else:
+            question_hiddens = self.question_rnn(qrnn_input, xq_mask)
 
 
 
