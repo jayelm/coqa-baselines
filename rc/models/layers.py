@@ -476,6 +476,10 @@ class IncrSeqAttnMatch(nn.Module):
         # Form dialog
         d_plus = [xq_emb[0], xa_emb[0]]  # Don't use answer marker features here
         d_proj = [xq_proj[0], xa_proj[0]]
+        if out_attention:
+            # Used in case d_mask has masked answers. We use d_mask to zero out answers, but
+            # this unmask to keep them in the final output
+            d_unmask = [xq_mask[0], xa_mask[0]]
         if self.mask_answers:
             # Mask all answers
             d_mask = [xq_mask[0], torch.ones_like(xa_mask[0])]
@@ -499,9 +503,11 @@ class IncrSeqAttnMatch(nn.Module):
             d_mask.append(xq_mask[t])
 
             if out_attention:  # Save attention weights, remove nonexistent qa
+                dm = torch.cat(d_unmask, 0)
                 alpha_masked = alpha[:, (1 - dm).nonzero().squeeze()]
                 alpha_masked = torch.cat((keep_p, alpha_masked), 1)
                 out_scores.append(alpha_masked)
+                d_unmask.append(xq_mask[t])
 
             if self.attend_answers:
                 xa_t_plus, alpha, keep_p, dm = self.attend(
@@ -517,6 +523,8 @@ class IncrSeqAttnMatch(nn.Module):
                 d_mask.append(torch.ones_like(xa_mask[t]))
             else:
                 d_mask.append(xa_mask[t])
+            if out_attention:
+                d_unmask.append(xa_mask[t])
 
         # Concat and return augmented qa reprs (every 2nd repr)
         xq_plus = torch.stack(d_plus[::2])
