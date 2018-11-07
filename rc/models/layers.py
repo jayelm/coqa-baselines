@@ -57,7 +57,7 @@ class StackedBRNN(nn.Module):
             rnn_input = dropout(rnn_input, self.dropout_rate,
                                 shared_axes=[1] if self.variational_dropout else [], training=self.training)
             # Forward
-            rnn_output, rnn_hidden = self.rnns[i](rnn_input, state)
+            rnn_output, rnn_hidden = self.rnns[i](rnn_input, state[i] if state is not None else None)
             outputs.append(rnn_output)
             if stateful:
                 hiddens.append(rnn_hidden)
@@ -73,7 +73,7 @@ class StackedBRNN(nn.Module):
             output = dropout(output, self.dropout_rate,
                              shared_axes=[1] if self.variational_dropout else [], training=self.training)
         if stateful:
-            return output, hiddens[0]
+            return output, hiddens
         return output
 
     def _forward_padded(self, x, x_mask, stateful=False, state=None):
@@ -103,7 +103,7 @@ class StackedBRNN(nn.Module):
             # Pack it
             rnn_input = nn.utils.rnn.pack_padded_sequence(rnn_input, lengths, batch_first=True)
             # Run it
-            rnn_output, (hn, cn) = self.rnns[i](rnn_input, state)
+            rnn_output, (hn, cn) = self.rnns[i](rnn_input, state[i] if state is not None else None)
             # Unpack it
             rnn_output = nn.utils.rnn.pad_packed_sequence(rnn_output, batch_first=True)[0]
             single_outputs.append(hn[-1])
@@ -127,7 +127,7 @@ class StackedBRNN(nn.Module):
             output = dropout(output, self.dropout_rate,
                              shared_axes=[1] if self.variational_dropout else [], training=self.training)
         if stateful:
-            return output, hiddens[0]
+            return output, hiddens
         return output
 
 
@@ -698,7 +698,7 @@ class FullyIncrSeqAttnMatch(IncrSeqAttnMatch):
         """
         # Zero out backward pass of cell state.
         if past_drnn_state is not None:
-            past_drnn_state = zero_backward_pass(past_drnn_state, len(drnn.rnns), )
+            past_drnn_state = [zero_backward_pass(st, 1) for st in past_drnn_state]
         assert len(x_emb.shape) == 2, "Must be 2d (no singleton batch)"
         # Unsqueeze embeddings. 1 x ... singleton batch
         x_emb = x_emb.unsqueeze(0)
