@@ -155,7 +155,7 @@ def get_args():
             use_attn_opt = attn_opt.replace('_attn', '_history')
             if not (args[use_attn_opt]):
                 parser.error("Must set --{} if wanting to analyze {}".format(use_attn_opt, attn_opt))
-            if args[attn_opt] not in ['word_hidden', 'word_hidden_incr']:
+            if args[attn_opt] not in ['word_hidden', 'word_hidden_incr', 'fully_incr']:
                 raise NotImplementedError("Analyzing {} attention".format(args[attn_opt]))
 
     if args['dialog_batched'] and args['batch_size'] > 2:

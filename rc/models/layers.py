@@ -495,7 +495,7 @@ class IncrSeqAttnMatch(nn.Module):
         for t, (xq_t, xa_t, xq_t_proj, xa_t_proj) in enumerate(embs, 1):
             xq_t_plus, alpha, keep_p, dm = self.attend(
                 t, xq_t, xq_t_proj,
-                d_plus, d_proj, d_mask, max_q_len, max_a_len)
+                d_plus, d_proj, d_mask)
 
             # Append augmented q to history
             d_plus.append(xq_t_plus)
@@ -512,7 +512,7 @@ class IncrSeqAttnMatch(nn.Module):
             if self.attend_answers:
                 xa_t_plus, alpha, keep_p, dm = self.attend(
                     t, xa_t, xa_t_proj,
-                    d_plus, d_proj, d_mask, max_q_len, max_a_len)
+                    d_plus, d_proj, d_mask)
             else:
                 xa_t_plus = xa_t  # Leave answer alone
 
@@ -533,8 +533,7 @@ class IncrSeqAttnMatch(nn.Module):
             return xq_plus, out_scores
         return xq_plus
 
-    def attend(self, t, x_t, x_proj,
-               d_plus, d_proj, d_mask, max_q_len, max_a_len):
+    def attend(self, t, x_t, x_proj, d_plus, d_proj, d_mask):
         """
         Augment question vector with attention over dialog history up to this point.
 
@@ -545,8 +544,6 @@ class IncrSeqAttnMatch(nn.Module):
             d_plus = augmented dialog history embeddings (List[torch.Tensor] of length t)
             d_proj = projected dialog history embeddings (List[torch.Tensor] of length t)
             d_mask = dialog history mask (List[torch.Tensor] of length t)
-            max_q_len = maximum question length (int)
-            max_a_len = maximum answer length (int)
         Returns:
             xq_t_plus = augmented question embedding (x_len * h)
             alpha = attention scores (x_len * history_len)
@@ -739,17 +736,6 @@ class FullyIncrSeqAttnMatch(IncrSeqAttnMatch):
 
         return x_h, x_proj, drnn_state
 
-    def reencode_dialog(self, drnn, d_plus, d_mask):
-        """
-        Re-encode the dialog history, starting with an empty initial state.
-        """
-        # XXX: Then set padding=False in question rnn
-        d_plus = torch.cat(d_plus, 0).unsqueeze(0)
-        d_mask_t = torch.cat(d_mask, 0).unsqueeze(0)
-        drnn_out, drnn_state = drnn(d_plus, d_mask_t, stateful=True, state=None)
-        drnn_out = drnn_out.squeeze(0)
-        return drnn_out, drnn_state
-
     def forward(self, drnn, xq_emb, xa_emb, xq_mask, xa_mask,
                 out_attention=False):
         """Input shapes:
@@ -779,7 +765,6 @@ class FullyIncrSeqAttnMatch(IncrSeqAttnMatch):
             d_mask = [xq_mask[0], torch.ones_like(xa_mask[0])]
         else:
             d_mask = [xq_mask[0], xa_mask[0]]
-        max_q_len, max_a_len = xq_proj_0.shape[0], xa_proj_0.shape[0]
 
         if out_attention:
             out_scores = []
@@ -796,7 +781,7 @@ class FullyIncrSeqAttnMatch(IncrSeqAttnMatch):
             # Project and augment this question repr
             xq_t_plus, alpha, keep_p, dm = self.attend(
                 t, xq_t_h, xq_t_proj,
-                d_plus, d_proj, d_mask, max_q_len, max_a_len
+                d_plus, d_proj, d_mask
             )
 
             d_plus.append(xq_t_plus)
@@ -817,7 +802,7 @@ class FullyIncrSeqAttnMatch(IncrSeqAttnMatch):
             if self.attend_answers:
                 xa_t_plus, alpha, keep_p, dm = self.attend(
                     t, xa_t_h, xa_t_proj,
-                    d_plus, d_proj, d_mask, max_q_len, max_a_len
+                    d_plus, d_proj, d_mask
                 )
             else:
                 xa_t_plus = xa_t_h  # Leave answer alone
@@ -849,9 +834,19 @@ class FullyIncrSeqAttnMatch(IncrSeqAttnMatch):
 
         #  xq_plus = nn.utils.rnn.pad_sequence(qs, batch_first=True)
         if out_attention:
+            max_q_len = max(x.shape[0] for x in d_plus[0::2])
+            max_a_len = max(x.shape[0] for x in d_plus[1::2])
             out_scores = self.clean_out_scores(out_scores, max_q_len, max_a_len)
             return xq_plus, out_scores
         return xq_plus
+
+    def clean_out_scores(self, out_scores, max_q_len, max_a_len):
+        # First pad along question dimension 0.
+        padded_out_scores = []
+        for os in out_scores:
+            os_pad = F.pad(os, (0, 0, 0, max_q_len - os.shape[0]))
+            padded_out_scores.append(os_pad)
+        return super(FullyIncrSeqAttnMatch, self).clean_out_scores(padded_out_scores, max_q_len, max_a_len)
 
 
 class BilinearSeqAttn(nn.Module):
