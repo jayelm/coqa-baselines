@@ -440,6 +440,9 @@ class IncrSeqAttnMatch(nn.Module):
             self.merge_layer = nn.Linear(input_size, 1)
         elif self.merge_type == 'linear_both':
             self.merge_layer = nn.Linear(2 * input_size, 1)
+        elif self.merge_type == 'lstm':
+            self.merge_layer = nn.LSTM(2 * input_size, input_size // 2, 1, batch_first=True,
+                                       bidirectional=True)
         else:
             raise NotImplementedError("merge_type = {}".format(merge_type))
 
@@ -683,6 +686,12 @@ class IncrSeqAttnMatch(nn.Module):
             # Look at current word and past attention, just concatted.
             keep_p = self.merge_layer(torch.cat((xq_t, xq_t_history), 1))
             keep_p = torch.sigmoid(keep_p)
+        elif self.merge_type == 'lstm':
+            # Look at current word and past attention, just concatted.
+            merge_layer_inp = torch.cat((xq_t, xq_t_history), 1).unsqueeze(0)
+            xq_t_plus, _ = self.merge_layer(merge_layer_inp)
+            xq_t_plus = xq_t_plus.squeeze(0)
+            return xq_t_plus, None
         else:
             raise NotImplementedError("merge_type = {}".format(self.merge_type))
         xq_t_plus = (keep_p * xq_t) + ((1.0 - keep_p) * xq_t_history)
