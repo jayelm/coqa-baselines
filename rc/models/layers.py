@@ -443,6 +443,10 @@ class IncrSeqAttnMatch(nn.Module):
         elif self.merge_type == 'lstm':
             self.merge_layer = nn.LSTM(2 * input_size, input_size // 2, 1, batch_first=True,
                                        bidirectional=True)
+        elif self.merge_type == 'linear_both_lstm':
+            self.merge_layer = nn.Linear(2 * input_size, 1)
+            self.merge_lstm = nn.LSTM(input_size, input_size // 2, 1, batch_first=True,
+                                      bidirectional=True)
         else:
             raise NotImplementedError("merge_type = {}".format(merge_type))
 
@@ -697,6 +701,16 @@ class IncrSeqAttnMatch(nn.Module):
             xq_t_plus, _ = self.merge_layer(merge_layer_inp)
             xq_t_plus = xq_t_plus.squeeze(0)
             return xq_t_plus, None
+        elif self.merge_type == 'linear_both_lstm':
+            # Linear merge + re-encoding via RNN
+            keep_p = self.merge_layer(torch.cat((xq_t, xq_t_history), 1))
+            keep_p = torch.sigmoid(keep_p)
+            xq_t_plus = (keep_p * xq_t) + ((1.0 - keep_p) * xq_t_history)
+
+            merge_lstm_inp = xq_t_plus.unsqueeze(0)
+            xq_t_plus, _ = self.merge_lstm(merge_lstm_inp)
+            xq_t_plus = xq_t_plus.squeeze(0)
+            return xq_t_plus, keep_p
         else:
             raise NotImplementedError("merge_type = {}".format(self.merge_type))
         xq_t_plus = (keep_p * xq_t) + ((1.0 - keep_p) * xq_t_history)
