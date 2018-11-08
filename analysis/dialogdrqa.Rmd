@@ -40,13 +40,8 @@ retrieve_q <- function(attn, n = 1, max_history = -1) {
   }
   attn_filtered <- attn %>%
     filter(startsWith(`<QUESTION>`, paste0(n, '-')))
-  if ('<KEEP>' %in% colnames(attn)) {
-    attn_filtered <- attn_filtered %>%
-      select(`<QUESTION>`, matches(past_times_re), '<KEEP>')
-  } else {
-    attn_filtered <- attn_filtered %>%
-      select(`<QUESTION>`, matches(past_times_re))
-  }
+  attn_filtered <- attn_filtered %>%
+    select(`<QUESTION>`, matches(past_times_re), contains('<KEEP>'), contains('<MERGE>'))
   attn_filtered
 }
 
@@ -60,10 +55,15 @@ attn_hm <- function(attn, n = 1, max_history = -1, hm_title = "") {
     select(-`<QUESTION>`) %>%
     as.matrix
   
-  rownames(aq_m) <- paste0(aq$`<QUESTION>`, '-', round(aq$`<KEEP>`, 3))
+  rownames(aq_m) <- paste0(aq$`<QUESTION>`, '-k', round(aq$`<KEEP>`, 3))
   
   # Add by one since the math here is 1-indexed
   np <- n + 1
+  
+  last_col <- length(colnames(aq_m)) - ('<KEEP>' %in% colnames(aq_m)) - ('<MERGE>' %in% colnames(aq_m))
+  if (last_col == length(colnames(aq_m))) {
+    last_col <- NULL
+  }
   
   par(las = 1)
   heatmap.2(aq_m, Rowv = FALSE, Colv = FALSE, dendrogram = 'none',
@@ -78,7 +78,7 @@ attn_hm <- function(attn, n = 1, max_history = -1, hm_title = "") {
             margins = c(7, 7),
             xlab = bquote(bold(d^{.(np)+phantom(0)})),
             ylab = bquote(bold(q^{.(np)})),
-            colsep = ifelse('<KEEP>' %in% colnames(aq_m), length(colnames(aq_m)) - 1, NA),
+            colsep = last_col,
             sepcolor = 'black',
             sepwidth = c(0.1, 0.1),
             breaks = seq(0, 1, length.out = 1001)
@@ -88,16 +88,8 @@ attn_hm <- function(attn, n = 1, max_history = -1, hm_title = "") {
 ```
 
 ```{r metrics_funcs, include=FALSE}
-MODEL_NAMES <- c(
-  'q_dialog_attn_word_hidden_incr_linear_both_h250' = 'Current + History Gate',
-  'q_dialog_attn_word_hidden_incr_linear_current_h250' = 'Current Gate',
-  'q_dialog_attn_word_hidden_incr_avg_h250' = 'Average Gate',
-  'dialog_batched_2' = 'Baseline (dialog batching)',
-  'danqi_baseline_exp' = 'Danqi Baseline',
-  'q_dialog_attn_word_hidden' = 'No Incremental'
-)
-
-read_metrics <- function(ms) {
+read_metrics <- function(mns) {
+  ms <- names(mns)
   all_metrics <- data.frame(
     epoch = NULL,
     value = NULL,
@@ -112,7 +104,7 @@ read_metrics <- function(ms) {
     dev_f1 <- scan(dev_f1_fp, sep='\n')
     epoch <- seq_along(dev_f1)
     metrics <- data.frame (
-      model = MODEL_NAMES[m],
+      model = mns[m],
       value = dev_f1,
       metric = 'dev_f1',
       epoch = epoch
@@ -137,19 +129,162 @@ read_coqa <- function(fp) {
 }
 ```
 
+In this project, we explore adapting standard reading comprehension models to the
+multi-turn QA setting (CoQA, QuAC) with mechanisms for attending over the dialog
+history, resolving coreferences, dialog state tracking, etc.
 
+# 2018-11-07: Diagnosing attention
 
-In this work, we explore the role of attending to the dialog history when attempting to answer a question in a multi-turn QA setting (e.g. CoQA or QuAC). Here are the scores of the models explored in this section. TL;DR no major improvements yet.
+The main problem with the iffy performance and odd attention
+maps for the past proposed methods was due to a bizarre focus on answer tokens.
+Observe, for example, the emphasis on "Orange" in the following example:
 
-```{r}
-metrics <- read_metrics(names(MODEL_NAMES))
+```{r 20181107_metrics}
+metrics <- read_metrics(c(
+  'q_dialog_attn_word_hidden_incr_linear_both_h250' = 'Current + History Gate (old)',
+  'mask_answers_2' = 'Ignore Answers',
+  'stateful_dialog' = 'State Carryover',
+  'dialog_batched_2' = 'Baseline (dialog batching)',
+  'danqi_baseline_exp' = 'Danqi Baseline'
+))
 ggplot(metrics, aes(x = epoch, y = value, group = model, color = model)) +
   geom_line() +
   xlab('Training Epoch') +
   ylab('Dev F1')
 ```
+```{r}
+attn_0 <- read_attn("q_dialog_attn_word_hidden_incr_linear_both_h250")
+attn_hm(attn_0, 5, hm_title = "Dev ex. 0, t = 6")
+```
 
-# Incrementally attending to dialog history
+In particular, there's a lot of (unnecessary) attention weight applied to the
+*beginning* of the answer. I realized this is probably because answers are
+encoded independently of questions, and the LSTM hidden/cell state is
+initialized to 0 for each answer. This likely isn't what we want (we'd like to
+carry over some context from the past question), and probably results in some weird
+attention bias which gets exacerbated during training, resulting in the behavior above.
+
+## Ignoring answers
+
+As as simple check of this, I implemented a model (with the gate that looks at
+both current AND past repr) which simply ignores past answers and attends over
+question only. I get an F-score of **71.32**, which definitely outperforms the
+dialog-batched baseline and is on par with Danqi's baseline. It's likely
+additional gains are possible by attending over answers, and later by augmenting
+document tokens with matches computed against these augmented question
+representations.
+
+When I look at the attention maps, the behavior isn't exactly what I was looking
+for, but is actually sensible when you think about it. Here I've also plotted
+the merge weights used to summarize the question into a fixed-length question
+vector, as that really helps get to what's going on:
+
+```{r mask_answers, echo=FALSE, warning=FALSE}
+attn_0 <- read_attn("mask_answers_2")
+
+attn_hm(attn_0, 1, hm_title = "Dev ex. 0, t = 2")
+attn_hm(attn_0, 2, hm_title = "Dev ex. 0, t = 3")
+attn_hm(attn_0, 5, hm_title = "Dev ex. 0, t = 6")
+```
+
+Specifically there's actually very high keep probability assigned to most tokens
+in the question, including the crucial pronouns (she), even though the
+resolution seems to be performed correctly. But the keep probability assigned to
+question marks (?) is generally much lower, and resolves to the past question's
+question marks. This high keep probability makes sense given that the
+merge weights barely even use intermediate tokens in the question - so there's
+not much point of merging in the first place!
+
+**This suggests that we should re-encode the augmented question representations
+with another LSTM to better incorporate the attention.** Thish might make coreference
+on intermediate tokens more useful (an experiment that is currently running).
+One question is whether to do the linear merge first, then run an LSTM, or run
+an LSTM on the concatted current/past attentions entirely?
+
+At least in the current formulation, this suggests that maybe the model is primarily trying to do
+sentence-level augmentation. This is what I had tried before, but with no
+positive results, though I had never tried an incremental version (where the
+question vectors are carried over), so that may be worth a try.
+
+When the questions don't end with question marks, there is still a bias towards
+resolving tokens at the end of a question to past tokens at the end of questions
+(perhaps I should modify CoQA so every question ends with a question mark).
+
+```{r}
+attn_1 <- read_attn("mask_answers_2", 1)
+
+attn_hm(attn_1, 1, hm_title = "Dev ex. 1, t = 2")
+attn_hm(attn_1, 2, hm_title = "Dev ex. 1, t = 3")
+attn_hm(attn_1, 5, hm_title = "Dev ex. 1, t = 6")
+```
+
+Finally, as Danqi suggested, here's an example of a single-word question: "What?" and the kinds of resolutions it tries to make:
+
+```{r mask_answers_2, echo=FALSE, warning=FALSE}
+attn_2 <- read_attn("mask_answers_2", 2)
+
+attn_hm(attn_2, 1, hm_title = "Dev ex. 2, t = 2")
+attn_hm(attn_2, 2, hm_title = "Dev ex. 2, t = 3")
+```
+
+## Carrying RNN state over
+
+Obviously ignoring answers is only a temporary fix, the ideal thing to do is not
+to encode answers and questions separately, but rather have a dialog encoder
+that runs over the entire QA sequence.
+
+This requires some trickery: I can't just run the entire LSTM over
+the dialog, since the backward pass lets future timesteps creep in. Instead, I
+need to proceed QA-pair by QA-pair, running the LSTM, performing the attention,
+and continuing to the next pair. I only carry forward the *forward* state of the
+LSTM, and zero out the backward state (not sure if this is completely kosher).
+
+Unfortunately I don't yet have final results for this run, as (1) it's much
+slower, (2) my jobs keep getting killed. But so far, signs point to performance
+being pretty similar to the model which ignores answers (as in, better than my
+baseline). See the green line on the chart above.
+
+The attention maps are a bit different: in particular, they're much more
+diffuse. But also sensible in some places (we can discuss).
+
+```{r state_carryover}
+attn_0 <- read_attn("stateful_dialog")
+
+attn_hm(attn_0, 1, hm_title = "Dev ex. 0, t = 2")
+attn_hm(attn_0, 2, hm_title = "Dev ex. 0, t = 3")
+attn_hm(attn_0, 5, hm_title = "Dev ex. 0, t = 6")
+
+attn_1 <- read_attn("stateful_dialog", 1)
+
+attn_hm(attn_1, 1, hm_title = "Dev ex. 1, t = 2")
+attn_hm(attn_1, 2, hm_title = "Dev ex. 1, t = 3")
+attn_hm(attn_1, 5, hm_title = "Dev ex. 1, t = 6")
+
+attn_2 <- read_attn("stateful_dialog", 2)
+
+attn_hm(attn_2, 1, hm_title = "Dev ex. 1, t = 2")
+attn_hm(attn_2, 2, hm_title = "Dev ex. 1, t = 3")
+```
+
+
+# 2018-11-01: Incrementally attending to dialog history
+
+Here are the scores of the models explored in this section. TL;DR no major improvements yet.
+
+```{r 20181101_metrics}
+metrics <- read_metrics(c(
+  'q_dialog_attn_word_hidden_incr_linear_both_h250' = 'Current + History Gate',
+  'q_dialog_attn_word_hidden_incr_linear_current_h250' = 'Current Gate',
+  'q_dialog_attn_word_hidden_incr_avg_h250' = 'Average Gate',
+  'dialog_batched_2' = 'Baseline (dialog batching)',
+  'danqi_baseline_exp' = 'Danqi Baseline',
+  'q_dialog_attn_word_hidden' = 'No Incremental'
+))
+ggplot(metrics, aes(x = epoch, y = value, group = model, color = model)) +
+  geom_line() +
+  xlab('Training Epoch') +
+  ylab('Dev F1')
+```
 
 ## Motivation
 
@@ -259,7 +394,7 @@ position in the q/a pair of the time). The far right column indicates the
 (possibly learned) "keep" probability. Here, since there is a straight average,
 the keep probability is always 0.5. Attention size $k$ is set to 250 for all experiments.
 
-```{r avg_attn, echo=FALSE, warning=FALSE}
+```{r avg_attn, echo=FALSE, warning=FALSE, cache=TRUE}
 attn_0 <- read_attn("q_dialog_attn_word_hidden_incr_avg_h250")
 
 attn_hm(attn_0, 1, hm_title = "Dev ex. 0, t = 2")
@@ -267,7 +402,7 @@ attn_hm(attn_0, 2, hm_title = "Dev ex. 0, t = 3")
 attn_hm(attn_0, 5, hm_title = "Dev ex. 0, t = 6")
 ```
 
-```{r avg_attn_2, echo=FALSE, warning=FALSE}
+```{r avg_attn_2, echo=FALSE, warning=FALSE, cache=TRUE}
 attn_2 <- read_attn("q_dialog_attn_word_hidden_incr_avg_h250", 1)
 
 attn_hm(attn_2, 1, hm_title = "Dev ex. 1, t = 2")
@@ -291,7 +426,7 @@ $$k_i = \sigma(\mathbf{w}_k \cdot \mathbf{q}^t_i)$$
 where $\mathbf{w}_k$ is a weight matrix of same dimensionality as $\mathbf{q}_t$ and $\sigma$ is the sigmoid function.
 
 
-```{r linear_current_attn, echo=FALSE, warning=FALSE}
+```{r linear_current_attn, echo=FALSE, warning=FALSE, cache=TRUE}
 attn_0 <- read_attn("q_dialog_attn_word_hidden_incr_linear_current_h250")
 
 attn_hm(attn_0, 1, hm_title = "Dev ex. 0, t = 2")
@@ -299,7 +434,7 @@ attn_hm(attn_0, 2, hm_title = "Dev ex. 0, t = 3")
 attn_hm(attn_0, 5, hm_title = "Dev ex. 0, t = 6")
 ```
 
-```{r linear_current_attn_2, echo=FALSE, warning=FALSE}
+```{r linear_current_attn_2, echo=FALSE, warning=FALSE, cache=TRUE}
 attn_2 <- read_attn("q_dialog_attn_word_hidden_incr_linear_current_h250", 1)
 
 attn_hm(attn_2, 1, hm_title = "Dev ex. 1, t = 2")
@@ -313,7 +448,7 @@ This gate looks at \emph{both} the current and historical representations, conca
 $$k_i = \sigma(\mathbf{w}_k \cdot [\mathbf{q}^t_i; \mathbf{h}^t_i])$$
 where $\mathbf{w}_k$ has dimensionality $|\mathbf{q}^t_i| + |\mathbf{h}^t_i|$.
 
-```{r linear_both_attn, echo=FALSE, warning=FALSE}
+```{r linear_both_attn, echo=FALSE, warning=FALSE, cache=TRUE}
 attn_0 <- read_attn("q_dialog_attn_word_hidden_incr_linear_both_h250")
 
 attn_hm(attn_0, 1, hm_title = "Dev ex. 0, t = 2")
@@ -321,7 +456,7 @@ attn_hm(attn_0, 2, hm_title = "Dev ex. 0, t = 3")
 attn_hm(attn_0, 5, hm_title = "Dev ex. 0, t = 6")
 ```
 
-```{r linear_both_attn_2, echo=FALSE, warning=FALSE}
+```{r linear_both_attn_2, echo=FALSE, warning=FALSE, cache=TRUE}
 attn_2 <- read_attn("q_dialog_attn_word_hidden_incr_linear_both_h250", 1)
 
 attn_hm(attn_2, 1, hm_title = "Dev ex. 1, t = 2")
@@ -347,7 +482,7 @@ trying out different configurations:
 Because there is a lot to attend to later in the dialog, here we limit the model
 so that it can only look at that past 2 timesteps.
 
-```{r linear_current_max_2, echo=FALSE, warning=FALSE}
+```{r linear_current_max_2, echo=FALSE, warning=FALSE, cache=TRUE}
 attn_0 <- read_attn("q_dialog_attn_word_hidden_incr_linear_current_h250_max_2")
 
 attn_hm(attn_0, 1, hm_title = "Dev ex. 0, t = 2")
@@ -366,7 +501,7 @@ attn_hm(attn_2, 5, hm_title = "Dev ex. 1, t = 6")
 Previously I did not augment answer representations because the code was a bit
 awkward; here I try that to see if that makes any difference.
 
-```{r attend_answers, echo=FALSE, warning=FALSE}
+```{r attend_answers, echo=FALSE, warning=FALSE, cache=TRUE}
 attn_0 <- read_attn("q_dialog_attn_both_aa")
 
 attn_hm(attn_0, 1, hm_title = "Dev ex. 0, t = 2")
@@ -386,7 +521,7 @@ attn_hm(attn_2, 5, hm_title = "Dev ex. 1, t = 6")
 
 Same as scoring function above, *without* ReLU nonlinearity (so just comparing raw dot product)
 
-```{r bilinear, echo=FALSE, warning=FALSE}
+```{r bilinear, echo=FALSE, warning=FALSE, cache=TRUE}
 attn_0 <- read_attn("q_dialog_attn_word_hidden_incr_linear_current_abilinear")
 
 attn_hm(attn_0, 1, hm_title = "Dev ex. 0, t = 2")
@@ -405,7 +540,7 @@ attn_hm(attn_2, 5, hm_title = "Dev ex. 1, t = 6")
 
 (Huang et al., 2018)
 
-```{r fully_aware, echo=FALSE, warning=FALSE}
+```{r fully_aware, echo=FALSE, warning=FALSE, cache=TRUE}
 attn_0 <- read_attn("q_dialog_attn_word_hidden_incr_linear_current_afully_aware")
 
 attn_hm(attn_0, 1, hm_title = "Dev ex. 0, t = 2")
@@ -423,7 +558,7 @@ attn_hm(attn_2, 5, hm_title = "Dev ex. 1, t = 6")
 
 Randomly sample 5 questions/attention heatmaps from the model gated by current and historical representations:
 
-```{r error_analysis}
+```{r error_analysis, cache=TRUE}
 set.seed(0)
 N_TO_ANALYZE <- 5
 EXPT_TO_ANALYZE <- 'q_dialog_attn_both_aa'
