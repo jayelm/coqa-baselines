@@ -51,6 +51,8 @@ vignettes/*.pdf
 
 # knitr and R markdown default cache directories
 /*_cache/
+/analysis/*_cache/
+/analysis/*_files/
 /cache/
 
 # Temporary files created by R markdown
