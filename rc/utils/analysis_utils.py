@@ -28,6 +28,7 @@ def _write_attn_to_file(ex, config, attn_type, attn, fp, rev_word_dict):
         full_d_history = []
         if config['q_dialog_attn'] in ['word_hidden_incr', 'fully_incr']:
             # Prepend keep probability.
+            full_d_history.append('"<MERGE>"')
             full_d_history.append('"<KEEP>"')
         max_r = max(recency_np[-1])
         for (last_d, r) in zip(xdialog_np[-1], recency_np[-1]):
