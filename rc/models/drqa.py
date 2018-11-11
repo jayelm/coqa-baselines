@@ -323,7 +323,8 @@ class DrQA(nn.Module):
                 xdialog_emb = self.w_embedding(ex['xdialog_full'])
                 xdialog_mask = ex['xdialog_full_mask']
                 if self.config['qa_emb_markers']:
-                    xdialog_emb = add_qa_emb_markers(xdialog_emb, xq_lengths, xa_lengths)
+                    xdialog_emb = add_qa_emb_markers(xdialog_emb, xq_lengths, xa_lengths,
+                                                     cuda=self.config['cuda'])
 
                 # Learn forwards direction embeddings
                 dialog_hiddens_f = self.dialog_rnn_forward(xdialog_emb, xdialog_mask)
