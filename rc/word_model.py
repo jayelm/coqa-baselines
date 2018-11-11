@@ -48,7 +48,7 @@ class WordModel(object):
             self.embed_size = self._model.vector_size
 
         # padding: 0
-        self.vocab = {Constants._UNK_TOKEN: 1}
+        self.vocab = {Constants._UNK_TOKEN: 1, Constants._Q_END: 2, Constants._A_END: 3}
         if self._model is not None:
             for i, key in enumerate(self._model.vocab):
                 if (top_n is not None) and (i >= top_n):
@@ -70,6 +70,9 @@ class WordModel(object):
             idx = self.vocab[word]
             if word in self._model.vocab:
                 self.word_vecs[idx] = self._model.word_vec(word)
+            elif word == Constants._Q_END:
+                # Initialize to standard question mark
+                self.word_vecs[idx] = self._model.word_vec('?')
 
     def set_model(self, filename, embed_type='glove'):
         timer = Timer('Load {}'.format(filename))

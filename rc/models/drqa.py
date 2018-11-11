@@ -298,7 +298,6 @@ class DrQA(nn.Module):
                 # First q has no access to dialog history
                 dialog_weighted_hidden_q = torch.cat((first_zeros, dialog_weighted_hidden_q), 0)
                 # Concat weighted hidden reprs with question hidden reprs.
-                # FIXME: Do we need one more LSTM layer to integrate this?
                 question_hiddens = torch.cat((question_hiddens, dialog_weighted_hidden_q), 2)
             elif self.config['q_dialog_attn'] == 'word_hidden_incr':
                 if self.config['answer_rnn']:

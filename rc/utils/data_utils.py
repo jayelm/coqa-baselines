@@ -391,6 +391,16 @@ def sanitize_input_dialog_batched(ex, config, vocab,
                                                              ex['histories'],
                                                              ex['annotated_answers']):
         question = annotated_question['word']
+        # Sanitize end of questions.
+        if config['standardize_endings'] == 'standard':
+            if question[-1] != '?':
+                question.append('?')
+        elif config['standardize_endings'] == 'artificial':
+            if question[-1] == '?':
+                question[-1] = Constants._Q_END
+            else:
+                question.append(Constants._Q_END)
+
         processed_q = [
             vocab[w] if w in vocab else vocab[Constants._UNK_TOKEN]
             for w in question
@@ -404,12 +414,20 @@ def sanitize_input_dialog_batched(ex, config, vocab,
             # Answer tokens were unicode or something else that caused
             # stanfordnlp annotation errors, so this is empty. Replace with a
             # single UNK token.
-            processed_a = [vocab[Constants._UNK_TOKEN]]
-        else:
-            processed_a = [
-                vocab[w] if w in vocab else vocab[Constants._UNK_TOKEN]
-                for w in answer
-            ]
+            answer = [Constants._UNK_TOKEN]
+
+        if config['standardize_endings'] == 'standard':
+            if answer[-1] != '.':
+                answer.append('.')
+        elif config['standardize_endings'] == 'artificial':
+            if answer[-1] == '.':
+                answer[-1] = Constants._A_END
+            else:
+                answer.append(Constants._A_END)
+        processed_a = [
+            vocab[w] if w in vocab else vocab[Constants._UNK_TOKEN]
+            for w in answer
+        ]
 
         processed_as.append(processed_a)
 

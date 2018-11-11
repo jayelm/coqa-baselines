@@ -10,6 +10,8 @@ Module to handle universal/general constants used across files.
 
 _UNK_TOKEN = '<<unk>>'
 _NO_ANSWER = '<<no_answer>>'
+_Q_END = '<<?>>'
+_A_END = '<<.>>'
 
 # LOG FILES ##
 
