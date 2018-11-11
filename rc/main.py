@@ -83,7 +83,7 @@ def get_args():
     group.add_argument('--max_history', type=int, default=-1,
                        help='How many timesteps to limit history to (-1 = use everything)')
     group.add_argument('--q_dialog_history', type=str2bool, default=False, help='Whether to add historical averages of dialog (question AND answer tokens) to question. word_emb = match raw glove embedding; word_hidden = match BiLSTM hidden representations')
-    group.add_argument('--q_dialog_attn', type=str, choices=['word_emb', 'word_hidden', 'word_hidden_incr', 'fully_incr'],
+    group.add_argument('--q_dialog_attn', type=str, choices=['word_emb', 'word_hidden', 'word_hidden_incr'],
                        default='word_emb', help='How to compute attention over past dialog')
     group.add_argument('--q_dialog_attn_incr_merge', type=str, choices=['average', 'linear_current', 'linear_both', 'lstm', 'linear_both_lstm'],
                        default='average', help='In the incremental case, how to average past and current representations')
@@ -155,7 +155,7 @@ def get_args():
             use_attn_opt = attn_opt.replace('_attn', '_history')
             if not (args[use_attn_opt]):
                 parser.error("Must set --{} if wanting to analyze {}".format(use_attn_opt, attn_opt))
-            if args[attn_opt] not in ['word_hidden', 'word_hidden_incr', 'fully_incr']:
+            if args[attn_opt] not in ['word_hidden', 'word_hidden_incr']:
                 raise NotImplementedError("Analyzing {} attention".format(args[attn_opt]))
 
     if args['dialog_batched'] and args['batch_size'] > 2:

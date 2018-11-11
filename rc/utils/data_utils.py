@@ -458,24 +458,30 @@ def vectorize_input_dialog_batched(batch, config, training=True, device=None):
     # Part 1.99: Load dialog words if attn mechanisms call for encoding dialog history
     # Last question is never in dialog history
     max_dialog_len = sum(len(q) + len(a) for q, a in zip(batch['questions'][:-1], batch['annotated_answers'][:-1]))
+    max_dialog_len_full = max_dialog_len + len(batch['questions'][-1]) + len(batch['annotated_answers'][-1])
     if not max_dialog_len:
         assert batch_size == 1
         # Set dummy dialog len (1), then dialog just 1x1 zero matrix
         max_dialog_len = 1
     xdialog = torch.LongTensor(batch_size, max_dialog_len).fill_(0)
     xdialog_mask = torch.ByteTensor(batch_size, max_dialog_len).fill_(1)
+    xdialog_full = torch.LongTensor(1, max_dialog_len_full).fill_(0)
+    xdialog_full_mask = torch.ByteTensor(1, max_dialog_len_full).fill_(0)
     dialog_recency_weights = torch.zeros((batch_size, max_dialog_len), dtype=torch.float32)
     dialog_i = 0
     for t, (q, a) in enumerate(zip(batch['questions'], batch['annotated_answers']), start=0):
         qa_len = len(q) + len(a)
         # For all times i, where (t + 1 <= i < batch_size), we have access to
         # the t-th qa pair
+        qa = torch.LongTensor(q + a)
         dialog_i_end = dialog_i + qa_len
         for i in range(t + 1, batch_size):
-            xdialog[i, dialog_i:dialog_i_end].copy_(torch.LongTensor(q + a))
+            xdialog[i, dialog_i:dialog_i_end].copy_(qa)
             xdialog_mask[i, dialog_i:dialog_i_end].fill_(0)
             dialog_recency_weights[i, dialog_i:dialog_i_end].fill_(i - t)
         # Next, fill starting from this index of the dialog
+
+        xdialog_full[0, dialog_i:dialog_i_end].copy_(qa)
         dialog_i = dialog_i_end
     if not xdialog_mask[-1].sum().item() == 0.0:
         assert batch_size == 1
@@ -522,6 +528,8 @@ def vectorize_input_dialog_batched(batch, config, training=True, device=None):
         'id': batch['id'],
         'xdialog': xdialog.to(device) if device else xdialog,
         'xdialog_mask': xdialog_mask.to(device) if device else xdialog_mask,
+        'xdialog_full': xdialog_full.to(device) if device else xdialog_full,
+        'xdialog_full_mask': xdialog_full_mask.to(device) if device else xdialog_full_mask,
         'dialog_recency_weights': dialog_recency_weights.to(device) if device else dialog_recency_weights,
     }
 

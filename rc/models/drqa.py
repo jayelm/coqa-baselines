@@ -1,9 +1,12 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.autograd import Variable
+from torch.nn.utils.rnn import pad_sequence
+import numpy as np
 from .layers import SeqAttnMatch, StackedBRNN, LinearSeqAttn, BilinearSeqAttn
 # Dialog attention
-from .layers import DialogSeqAttnMatch, IncrSeqAttnMatch, FullyIncrSeqAttnMatch
+from .layers import DialogSeqAttnMatch, IncrSeqAttnMatch
 from .layers import weighted_avg, uniform_weights, dropout, onehot_markers
 
 
@@ -86,19 +89,6 @@ class DrQA(nn.Module):
                     answer_marker_features=self.config['history_dialog_answer_f'],
                     hidden_size=self.config['attn_hidden_size'],
                 )
-            elif self.config['q_dialog_attn'] == 'fully_incr':
-                self.q_dialog_match = FullyIncrSeqAttnMatch(
-                    question_hidden_size,
-                    recency_bias=self.config['recency_bias'],
-                    merge_type=self.config['q_dialog_attn_incr_merge'],
-                    max_history=self.config['max_history'],
-                    cuda=self.config['cuda'],
-                    scoring=self.config['q_dialog_attn_scoring'],
-                    mask_answers=self.config['mask_answers'],
-                    attend_answers=self.config['attend_answers'],
-                    answer_marker_features=self.config['history_dialog_answer_f'],
-                    hidden_size=self.config['attn_hidden_size'],
-                )
             else:
                 raise NotImplementedError("q_dialog_attn = {}".format(self.config['q_dialog_attn']))
 
@@ -148,18 +138,45 @@ class DrQA(nn.Module):
         )
 
         # RNN question encoder
-        self.question_rnn = StackedBRNN(
-            input_size=q_input_size,
-            hidden_size=config['hidden_size'],
-            num_layers=config['num_layers'],
-            dropout_rate=config['dropout_rnn'],
-            dropout_output=config['dropout_rnn_output'],
-            variational_dropout=config['variational_dropout'],
-            concat_layers=config['concat_rnn_layers'],
-            rnn_type=self._RNN_TYPES[config['rnn_type']],
-            padding=config['rnn_padding'],
-            bidirectional=True,
-        )
+        if self.config['q_dialog_history'] and self.config['q_dialog_attn'] == 'word_hidden_incr':
+            # 2 separate RNNs, one for forward direction
+            self.dialog_rnn_forward = StackedBRNN(
+                input_size=q_input_size,
+                hidden_size=config['hidden_size'],
+                num_layers=config['num_layers'],
+                dropout_rate=config['dropout_rnn'],
+                dropout_output=config['dropout_rnn_output'],
+                variational_dropout=config['variational_dropout'],
+                concat_layers=config['concat_rnn_layers'],
+                rnn_type=self._RNN_TYPES[config['rnn_type']],
+                padding=config['rnn_padding'],
+                bidirectional=False,
+            )
+            self.dialog_rnn_backward = StackedBRNN(
+                input_size=q_input_size,
+                hidden_size=config['hidden_size'],
+                num_layers=config['num_layers'],
+                dropout_rate=config['dropout_rnn'],
+                dropout_output=config['dropout_rnn_output'],
+                variational_dropout=config['variational_dropout'],
+                concat_layers=config['concat_rnn_layers'],
+                rnn_type=self._RNN_TYPES[config['rnn_type']],
+                padding=config['rnn_padding'],
+                bidirectional=False,
+            )
+        else:
+            self.question_rnn = StackedBRNN(
+                input_size=q_input_size,
+                hidden_size=config['hidden_size'],
+                num_layers=config['num_layers'],
+                dropout_rate=config['dropout_rnn'],
+                dropout_output=config['dropout_rnn_output'],
+                variational_dropout=config['variational_dropout'],
+                concat_layers=config['concat_rnn_layers'],
+                rnn_type=self._RNN_TYPES[config['rnn_type']],
+                padding=config['rnn_padding'],
+                bidirectional=True,
+            )
 
         if config['answer_rnn']:
             self.answer_rnn = StackedBRNN(
@@ -225,7 +242,7 @@ class DrQA(nn.Module):
         # ==== QUESTION ====
         qrnn_input = xq_emb
         if self.config['qa_emb_markers']:
-            if not (self.config['q_dialog_history'] and self.config['q_dialog_attn'] == 'fully_incr'):
+            if not (self.config['q_dialog_history'] and self.config['q_dialog_attn'] == 'word_hidden_incr'):
                 raise NotImplementedError
             markers = onehot_markers(qrnn_input, 2, 0, cuda=self.config['cuda'])
             qrnn_input = torch.cat((qrnn_input, markers), 2)
@@ -284,44 +301,51 @@ class DrQA(nn.Module):
                 # FIXME: Do we need one more LSTM layer to integrate this?
                 question_hiddens = torch.cat((question_hiddens, dialog_weighted_hidden_q), 2)
             elif self.config['q_dialog_attn'] == 'word_hidden_incr':
-                question_hiddens = self.question_rnn(qrnn_input, xq_mask)
+                if self.config['answer_rnn']:
+                    raise NotImplementedError
+                # Load answers
                 xa_emb = self.w_embedding(ex['xa'])
                 xa_mask = ex['xa_mask']
-                # XXX: Reuse question RNN? Make new answer RNN? Run
-                # answers independently? Run question and answer pairs
-                # together? But then how to deal with augmentation?
-                if self.config['answer_rnn']:
-                    answer_hiddens = self.answer_rnn(xa_emb, xa_mask)
-                else:
-                    # Reuse question RNN.
-                    answer_hiddens = self.question_rnn(xa_emb, xa_mask)
-                if ex['out_attentions'] and 'q_dialog_attn' in ex['out_attentions']:
-                    question_hiddens, q_dialog_attn = self.q_dialog_match(
-                        question_hiddens, answer_hiddens, xq_mask, xa_mask,
-                        out_attention=True
-                    )
-                    out_attentions['q_dialog_attn'] = q_dialog_attn
-                else:
-                    # This module completely replaces existing question hiddens.
-                    question_hiddens = self.q_dialog_match(
-                        question_hiddens, answer_hiddens, xq_mask, xa_mask,
-                        out_attention=False
-                    )
-            elif self.config['q_dialog_attn'] == 'fully_incr':
-                xa_emb = self.w_embedding(ex['xa'])
+
                 if self.config['qa_emb_markers']:
                     markers = onehot_markers(xa_emb, 2, 1, cuda=self.config['cuda'])
-                xa_emb = torch.cat((xa_emb, markers), 2)
+                    xa_emb = torch.cat((xa_emb, markers), 2)
+
+                # Reverse sequences
+                xq_lengths = torch.sum(1 - xq_mask, 1)
+                xq_emb_b = reverse_padded_sequence(qrnn_input, xq_lengths, batch_first=True)
+                xa_lengths = torch.sum(1 - xa_mask, 1)
+                xa_emb_b = reverse_padded_sequence(xa_emb, xa_lengths, batch_first=True)
+
+                # Learn backwards direction embeddings
+                question_hiddens_b = self.dialog_rnn_backward(xq_emb_b, xq_mask)
+                answer_hiddens_b = self.dialog_rnn_backward(xa_emb_b, xa_mask)
+
+                xdialog_emb = self.w_embedding(ex['xdialog_full'])
+                xdialog_mask = ex['xdialog_full_mask']
+                if self.config['qa_emb_markers']:
+                    xdialog_emb = add_qa_emb_markers(xdialog_emb, xq_lengths, xa_lengths)
+
+                # Learn forwards direction embeddings
+                dialog_hiddens_f = self.dialog_rnn_forward(xdialog_emb, xdialog_mask)
+                dialog_hiddens_f = dialog_hiddens_f.squeeze(0)
+                question_hiddens_f, answer_hiddens_f = extract_qa_hiddens(dialog_hiddens_f,
+                                                                          xq_lengths,
+                                                                          xa_lengths)
+
+                question_hiddens = torch.cat((question_hiddens_f, question_hiddens_b), 2)
+                answer_hiddens = torch.cat((answer_hiddens_f, answer_hiddens_b), 2)
+
                 if ex['out_attentions'] and 'q_dialog_attn' in ex['out_attentions']:
                     question_hiddens, q_dialog_attn = self.q_dialog_match(
-                        self.question_rnn, qrnn_input, xa_emb, xq_mask, xa_mask,
+                        question_hiddens, answer_hiddens, xq_mask, xa_mask,
                         out_attention=True
                     )
                     out_attentions['q_dialog_attn'] = q_dialog_attn
                 else:
                     # This module completely replaces existing question hiddens.
                     question_hiddens = self.q_dialog_match(
-                        self.question_rnn, qrnn_input, xa_emb, xq_mask, xa_mask,
+                        question_hiddens, answer_hiddens, xq_mask, xa_mask,
                         out_attention=False
                     )
             else:
@@ -391,3 +415,75 @@ class DrQA(nn.Module):
             #  out_attentions = {k: v.detach().cpu().numpy() for k, v in out_attentions.items()}
             out['out_attentions'] = out_attentions
         return out
+
+
+def reverse_padded_sequence(inputs, lengths, batch_first=False):
+    """Reverses sequences according to their lengths.
+    Inputs should have size ``T x B x *`` if ``batch_first`` is False, or
+    ``B x T x *`` if True. T is the length of the longest sequence (or larger),
+    B is the batch size, and * is any number of dimensions (including 0).
+    Arguments:
+        inputs (Variable): padded batch of variable length sequences.
+        lengths (list[int]): list of sequence lengths
+        batch_first (bool, optional): if True, inputs should be B x T x *.
+    Returns:
+        A Variable with the same size as inputs, but with each sequence
+        reversed according to its length.
+    """
+    if batch_first:
+        inputs = inputs.transpose(0, 1)
+    max_length, batch_size = inputs.size(0), inputs.size(1)
+    if len(lengths) != batch_size:
+        raise ValueError('inputs is incompatible with lengths.')
+    ind = [list(reversed(range(0, length))) + list(range(length, max_length))
+           for length in lengths]
+    ind = Variable(torch.LongTensor(ind).transpose(0, 1))
+    for dim in range(2, inputs.dim()):
+        ind = ind.unsqueeze(dim)
+    ind = ind.expand_as(inputs)
+    if inputs.is_cuda:
+        ind = ind.cuda(inputs.get_device())
+    reversed_inputs = torch.gather(inputs, 0, ind)
+    if batch_first:
+        reversed_inputs = reversed_inputs.transpose(0, 1)
+    return reversed_inputs
+
+
+def extract_qa_hiddens(dialog_hiddens, xq_lengths, xa_lengths):
+    """
+    Given concatted dialog sequence, split up into question/answer embeddings
+    of the same shape as xq_mask and xa_mask.
+    """
+    dialog_i = 0
+    q_seqs = []
+    a_seqs = []
+    for q_len, a_len in zip(xq_lengths, xa_lengths):
+        q = dialog_hiddens[dialog_i:dialog_i+q_len]
+        dialog_i += q_len
+        q_seqs.append(q)
+
+        a = dialog_hiddens[dialog_i:dialog_i+a_len]
+        dialog_i += a_len
+        a_seqs.append(a)
+
+    q_hiddens = pad_sequence(q_seqs, batch_first=True)
+    a_hiddens = pad_sequence(a_seqs, batch_first=True)
+
+    return q_hiddens, a_hiddens
+
+
+def add_qa_emb_markers(xdialog_emb, xq_lengths, xa_lengths, cuda=False):
+    """
+    Add one-hot question answer features to the dialog embeddings.
+    """
+    features_np = np.zeros(xdialog_emb.shape[:2] + (2, ), dtype=np.float32)
+    dialog_i = 0
+    for q, a in zip(xq_lengths, xa_lengths):
+        features_np[0, dialog_i:dialog_i+q, 0] = 1
+        dialog_i += q
+        features_np[0, dialog_i:dialog_i+a, 1] = 1
+        dialog_i += a
+    features = torch.tensor(features_np)
+    if cuda:
+        features = features.cuda()
+    return torch.cat((xdialog_emb, features), 2)
