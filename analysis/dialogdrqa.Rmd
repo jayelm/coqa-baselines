@@ -9,124 +9,10 @@ output:
 ---
 
 ```{r setup, include=FALSE}
-library(tidyverse)
-library(gplots)
-library(cowplot)
-library(RColorBrewer)
-library(jsonlite)
 library(knitr)
-
 knitr::opts_chunk$set(message=FALSE, warning=FALSE, echo=FALSE)
 
-attn_col <- colorRampPalette(c('white', 'blue'))(1000)
-```
-
-```{r attn_funcs, include=FALSE}
-read_attn <- function(expt, n = 0, type = 'q_dialog_attn') {
-  csv_fp <- paste0('../exp/', expt, '/attention/', n, '-', type, '.csv')
-  message("Reading ", csv_fp)
-  read_csv(csv_fp)
-}
-
-retrieve_q <- function(attn, n = 1, max_history = -1) {
-  if (max_history > -1) {
-    past_times_re <- (n - max_history):(n - 1) %>%
-      sapply(function(t) paste0('^', t, '-')) %>%
-      paste(collapse = '|')
-  } else {
-    past_times_re <- 0:(n - 1) %>%
-      sapply(function(t) paste0('^', t, '-')) %>%
-      paste(collapse = '|')
-  }
-  attn_filtered <- attn %>%
-    filter(startsWith(`<QUESTION>`, paste0(n, '-')))
-  attn_filtered <- attn_filtered %>%
-    select(`<QUESTION>`, matches(past_times_re), contains('<KEEP>'), contains('<MERGE>'))
-  attn_filtered
-}
-
-attn_hm <- function(attn, n = 1, max_history = -1, hm_title = "") {
-  if (n < 1) {
-    stop(paste0("Can't draw attention heatmap for n = ", n))
-  }
-  
-  aq <- retrieve_q(attn, n, max_history)
-  aq_m <- aq %>%
-    select(-`<QUESTION>`) %>%
-    as.matrix
-  
-  rownames(aq_m) <- paste0(aq$`<QUESTION>`, '-k', round(aq$`<KEEP>`, 3))
-  
-  # Add by one since the math here is 1-indexed
-  np <- n + 1
-  
-  last_col <- length(colnames(aq_m)) - ('<KEEP>' %in% colnames(aq_m)) - ('<MERGE>' %in% colnames(aq_m))
-  if (last_col == length(colnames(aq_m))) {
-    last_col <- NULL
-  }
-  
-  par(las = 1)
-  heatmap.2(aq_m, Rowv = FALSE, Colv = FALSE, dendrogram = 'none',
-            col = attn_col, trace = 'none', cexRow = 0.9, cexCol = 0.9,
-            key.xtickfun = function() list(at = seq(0, 1, 0.25), labels = seq(0, 1, 0.25)),
-            key.ylab = NA,
-            key.xlab = NA,
-            key.title = NA,
-            density.info = 'none',
-            keysize = 1,
-            key.ytickfun = function() list(at = c(), labels = c()),
-            margins = c(7, 7),
-            xlab = bquote(bold(d^{.(np)+phantom(0)})),
-            ylab = bquote(bold(q^{.(np)})),
-            colsep = last_col,
-            sepcolor = 'black',
-            sepwidth = c(0.1, 0.1),
-            breaks = seq(0, 1, length.out = 1001)
-            )
-  title(hm_title)
-}
-```
-
-```{r metrics_funcs, include=FALSE}
-read_metrics <- function(mns) {
-  ms <- names(mns)
-  all_metrics <- data.frame(
-    epoch = NULL,
-    value = NULL,
-    metric = NULL,
-    model = NULL
-  )
-  for (m in ms) {
-    dir <- paste0('../exp/', m, '/metrics/')
-    dev_em_fp <- paste0(dir, 'dev_em_epoch.txt')
-    dev_f1_fp <- paste0(dir, 'dev_f1_epoch.txt')
-    dev_em <- scan(dev_em_fp, sep='\n')
-    dev_f1 <- scan(dev_f1_fp, sep='\n')
-    epoch <- seq_along(dev_f1)
-    metrics <- data.frame (
-      model = mns[m],
-      value = dev_f1,
-      metric = 'dev_f1',
-      epoch = epoch
-    )
-    all_metrics = rbind(all_metrics, metrics)
-  }
-  all_metrics
-}
-```
-
-```{r pred_func, include=FALSE}
-read_predictions <- function(expt) {
-  csv_fp <- paste0('../exp/', expt, '/predictions.csv')
-  message("Reading ", csv_fp)
-  read_csv(csv_fp)
-}
-read_coqa <- function(fp) {
-  data <- fromJSON(fp)$data
-  data$id <- 0:(length(data$id) - 1)
-  data$questions <- NULL
-  data
-}
+source('./analysis.R')
 ```
 
 In this project, we explore adapting standard reading comprehension models to the
@@ -134,10 +20,6 @@ multi-turn QA setting (CoQA, QuAC) with mechanisms for attending over the dialog
 history, resolving coreferences, dialog state tracking, etc.
 
 # 2018-11-07: Diagnosing attention
-
-The main problem with the iffy performance and odd attention
-maps for the past proposed methods was due to a bizarre focus on answer tokens.
-Observe, for example, the emphasis on "Orange" in the following example:
 
 ```{r 20181107_metrics}
 metrics <- read_metrics(c(
@@ -152,6 +34,11 @@ ggplot(metrics, aes(x = epoch, y = value, group = model, color = model)) +
   xlab('Training Epoch') +
   ylab('Dev F1')
 ```
+
+The main problem with the iffy performance and odd attention
+maps for the past proposed methods was due to a bizarre focus on answer tokens.
+Observe, for example, the emphasis on "Orange" in the following example:
+
 ```{r}
 attn_0 <- read_attn("q_dialog_attn_word_hidden_incr_linear_both_h250")
 attn_hm(attn_0, 5, hm_title = "Dev ex. 0, t = 6")
@@ -265,7 +152,6 @@ attn_2 <- read_attn("stateful_dialog", 2)
 attn_hm(attn_2, 1, hm_title = "Dev ex. 1, t = 2")
 attn_hm(attn_2, 2, hm_title = "Dev ex. 1, t = 3")
 ```
-
 
 # 2018-11-01: Incrementally attending to dialog history
 
@@ -410,7 +296,6 @@ attn_hm(attn_2, 2, hm_title = "Dev ex. 1, t = 3")
 attn_hm(attn_2, 5, hm_title = "Dev ex. 1, t = 6")
 ```
 
-
 ### Gating
 
 The next functions depend on learning a "gate" which decides to what degree to incorporate history. The gates output a *keep* value $k_i \in [0, 1]$, controlling the tradeoff between $\mathbf{q}^t_i$ and $\mathbf{h}^t_i$. A value of 1 means to keep the current representation, while a value of 0 means to use only the historical representation.
@@ -424,7 +309,6 @@ $$
 This gate looks only at the representation of the current word when deciding to keep/forget:
 $$k_i = \sigma(\mathbf{w}_k \cdot \mathbf{q}^t_i)$$
 where $\mathbf{w}_k$ is a weight matrix of same dimensionality as $\mathbf{q}_t$ and $\sigma$ is the sigmoid function.
-
 
 ```{r linear_current_attn, echo=FALSE, warning=FALSE, cache=TRUE}
 attn_0 <- read_attn("q_dialog_attn_word_hidden_incr_linear_current_h250")
@@ -535,7 +419,6 @@ attn_hm(attn_2, 2, hm_title = "Dev ex. 1, t = 3")
 attn_hm(attn_2, 5, hm_title = "Dev ex. 1, t = 6")
 ```
 
-
 #### "Fully-aware" attention
 
 (Huang et al., 2018)
@@ -600,4 +483,3 @@ preds %>%
   summarise(mean_f1 = mean(f1)) %>%
   kable
 ```
-

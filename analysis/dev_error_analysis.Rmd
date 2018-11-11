@@ -1,0 +1,71 @@
+---
+title: "Dev Set Error Analysis"
+output:
+  html_document:
+    toc: yes
+    toc_float: yes
+    toc_depth: 3
+    number_sections: yes
+---
+
+```{r setup, include=FALSE}
+library(knitr)
+knitr::opts_chunk$set(message=FALSE, warning=FALSE, echo=FALSE)
+knit_hooks$set(optipng = hook_optipng)
+
+source('./analysis.R')
+```
+
+```{r load}
+EXPT <- 'stateful_dialog'
+N_TO_ANALYZE <- 100
+N_ATTN <- 20
+pred <- read_predictions(EXPT)
+flowqa_pred <- read_predictions_json('flowqa') %>%
+  rename(flowqa_answer = answer)
+
+flowqa_id_distinct <- flowqa_pred %>%
+  distinct(id) %>%
+  .$id %>%
+  setNames(1:500, .)
+
+flowqa_pred <- flowqa_pred %>%
+  mutate(id = flowqa_id_distinct[id] - 1,
+         turn_id = turn_id - 1)
+
+coqa_dev <- read_coqa('../data/coqa/coqa-dev-v1.0.json')
+
+set.seed(0)
+wrong <- pred %>%
+  filter(turn_id > 0 & turn_id < 5) %>%
+  filter(f1 == 0) %>%
+  distinct(id, .keep_all = TRUE) %>%
+  sample_n(N_TO_ANALYZE) %>%
+  left_join(coqa_dev %>% select(id, turn_id, story, question, history, next_question), by = c('id', 'turn_id')) %>%
+  left_join(flowqa_pred %>% select(id, turn_id, flowqa_answer), by = c('id', 'turn_id')) %>%
+  arrange(id, turn_id)
+```
+
+```{r res, echo=FALSE, results='asis', dpi=100, fig.retina=2}
+a <- sapply(1:N_TO_ANALYZE, function(i) {
+  row <- wrong[i, ]
+  cat('# n = ', row$id, ', t = ', row$turn_id + 1, '\n', sep = '')
+  cat('\n')
+  cat(row$story)
+  cat('\n\n')
+  cat(row$history)
+  cat('\n\n')
+  cat('**\\<Q', row$turn_id + 1, '\\>** ', row$next_question, sep = '')
+  cat('\n\n')
+  cat('**\\<A', row$turn_id + 1, '\\> pred:** ', row$answer, '\n\n', sep = '')
+  cat('**\\<A', row$turn_id + 1, '\\> FlowQA pred:** ', row$flowqa_answer, '\n\n', sep = '')
+  cat('**\\<A', row$turn_id + 1, '\\> truth:** ', row$gold_answer_1, '\n\n', sep = '')
+  if (i <= N_ATTN) {
+    attn <- read_attn('stateful_dialog', row$id)
+    attn_hm(attn, row$turn_id)
+  }
+  cat('\n\n----\n\n')
+})
+```
+
+
