@@ -392,7 +392,7 @@ def sanitize_input_dialog_batched(ex, config, vocab,
                                                              ex['annotated_answers']):
         question = annotated_question['word']
         # Sanitize end of questions.
-        if config['standardize_endings'] == 'standard':
+        if config['standardize_endings'] == 'standard' or config['standardize_endings'] == 'standard_question':
             if question[-1] != '?':
                 question.append('?')
         elif config['standardize_endings'] == 'artificial':
