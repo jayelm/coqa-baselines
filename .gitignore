@@ -64,5 +64,5 @@ rsconnect/
 
 *.html
 
-bert/*
-!bert/README.md
+bert/models/*
+!bert/models/README.md
