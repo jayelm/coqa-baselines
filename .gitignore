@@ -23,6 +23,8 @@ data/squad/dev-v1.1.json
 
 exp/*
 !exp/README.md
+bexp/*
+!bexp/README.md
 
 sync.sh
 .Rproj.user
