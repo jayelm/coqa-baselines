@@ -790,7 +790,7 @@ def multi_nll_loss(scores, target_mask):
 
 def uniform_weights(x, x_mask):
     """Return uniform weights over non-masked input."""
-    raise NotImplementedError
+    return F.normalize(x_mask.eq(0).type(x.dtype), 1)
 
 
 def weighted_avg(x, weights):

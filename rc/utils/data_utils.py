@@ -402,7 +402,10 @@ def sanitize_input_dialog_batched(ex, config, vocab,
                 question.append(Constants._Q_END)
         elif config['standardize_endings'] == 'remove_question':
             if question[-1] == '?':
-                question = question[:-1]
+                if len(question) == 1:
+                    question = [Constants._UNK_TOKEN]
+                else:
+                    question = question[:-1]
 
         processed_q = [
             vocab[w] if w in vocab else vocab[Constants._UNK_TOKEN]

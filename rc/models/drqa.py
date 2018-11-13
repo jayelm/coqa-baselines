@@ -195,8 +195,6 @@ class DrQA(nn.Module):
         # Question merging
         if config['question_merge'] == 'self_attn':
             self.self_attn = LinearSeqAttn(question_hidden_size)
-        else:
-            raise NotImplementedError('question_merge = %s' % config['question_merge'])
 
         # Bilinear attention for span start/end
         self.start_attn = BilinearSeqAttn(
@@ -359,11 +357,11 @@ class DrQA(nn.Module):
             q_merge_weights = uniform_weights(question_hiddens, xq_mask)
         elif self.config['question_merge'] == 'self_attn':
             q_merge_weights = self.self_attn(question_hiddens.contiguous(), xq_mask)
-            if ex['out_attentions'] and 'q_dialog_attn' in ex['out_attentions']:
-                # Also prepend merge weights (why not?)
-                q_merge_weights_f = q_merge_weights.unsqueeze(2)
-                new_attn = torch.cat((q_merge_weights_f, out_attentions['q_dialog_attn']), 2)
-                out_attentions['q_dialog_attn'] = new_attn
+        if ex['out_attentions'] and 'q_dialog_attn' in ex['out_attentions']:
+            # Also prepend merge weights (why not?)
+            q_merge_weights_f = q_merge_weights.unsqueeze(2)
+            new_attn = torch.cat((q_merge_weights_f, out_attentions['q_dialog_attn']), 2)
+            out_attentions['q_dialog_attn'] = new_attn
         question_hidden = weighted_avg(question_hiddens, q_merge_weights)
 
         # ==== DOCUMENT ====
