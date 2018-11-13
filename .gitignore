@@ -16,6 +16,9 @@ data/wordvecs/*.vec
 data/quac/train.json
 data/quac/val.json
 
+data/squad/train-v1.1.json
+data/squad/dev-v1.1.json
+
 *.out
 
 exp/*
