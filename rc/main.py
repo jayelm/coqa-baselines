@@ -43,7 +43,7 @@ def get_args():
 
     parser.add_argument('--n_history', type=int, default=-1)
     parser.add_argument('--cased', type=str2bool, default=True, help='Cased or uncased version.')
-    parser.add_argument('--standardize_endings', type=str, choices=['standard', 'standard_question', 'artificial', 'none'],
+    parser.add_argument('--standardize_endings', type=str, choices=['standard', 'standard_question', 'artificial', 'none', 'remove_question'],
                         default='standard_question', help='Standardize endings of questions and answers. '
                                                  'standard = use ? and .; artificial = custom q/a embeddings')
     parser.add_argument('--min_freq', type=int, default=100)
