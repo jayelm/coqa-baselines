@@ -650,6 +650,8 @@ class IncrSeqAttnMatch(nn.Module):
         """
         if self.scoring == 'linear_relu':
             return x.mm(y.transpose(1, 0))
+        elif self.scoring == 'linear_relu_asym':
+            return x.mm(y.transpose(1, 0))
         elif self.scoring == 'bilinear':
             return x.mm(y.transpose(1, 0))
         elif self.scoring == 'fully_aware':
