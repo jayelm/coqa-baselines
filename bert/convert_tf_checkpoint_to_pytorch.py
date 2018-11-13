@@ -18,6 +18,7 @@ from __future__ import absolute_import
 from __future__ import division
 from __future__ import print_function
 
+import os
 import re
 import argparse
 import tensorflow as tf
@@ -43,7 +44,7 @@ parser.add_argument("--bert_config_file",
 parser.add_argument("--pytorch_dump_path",
                     default = None,
                     type = str,
-                    required = True,
+                    required = False,
                     help = "Path to the output PyTorch model.")
 
 args = parser.parse_args()
@@ -99,6 +100,8 @@ def convert():
         pointer.data = torch.from_numpy(array)
 
     # Save pytorch-model
+    if args.pytorch_dump_path is None:
+        args.pytorch_dump_path = os.path.dirname(args.tf_checkpoint_path) + '.pth'
     torch.save(model.state_dict(), args.pytorch_dump_path)
 
 if __name__ == "__main__":
