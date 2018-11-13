@@ -33,3 +33,7 @@ python bert/run_squad.py \
     --max_seq_length 384 \
     --doc_stride 128 \
     --output_dir "$1"
+
+# Evaluate
+echo "==== EVALUATING ===="
+python data/squad/evaluate-v1.1.py data/squad/dev-v1.1.json "$1/predictions.json" | tee "$1/metrics.json"
