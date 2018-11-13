@@ -96,6 +96,8 @@ def get_args():
                        help='Add qa markers to embeddings')
     group.add_argument('--answer_rnn', type=str2bool, default=False,
                        help='Use separately parameterized RNN to encode answers')
+    group.add_argument('--qhier_rnn', type=str2bool, default=False,
+                       help='Re-run question embeddings through forward LSTM')
     group.add_argument('--mask_answers', type=str2bool, default=False,
                        help='Don\'t attend to answers')
     group.add_argument('--attend_answers', type=str2bool, default=False,

@@ -196,6 +196,21 @@ class DrQA(nn.Module):
         if config['question_merge'] == 'self_attn':
             self.self_attn = LinearSeqAttn(question_hidden_size)
 
+        # Question history re-encoding
+        if config['qhier_rnn']:
+            self.qhier_rnn = StackedBRNN(
+                input_size=question_hidden_size,
+                hidden_size=question_hidden_size,
+                num_layers=1,
+                dropout_rate=config['dropout_rnn'],
+                dropout_output=config['dropout_rnn_output'],
+                variational_dropout=config['variational_dropout'],
+                concat_layers=False,
+                rnn_type=self._RNN_TYPES[config['rnn_type']],
+                padding=config['rnn_padding'],
+                bidirectional=False,
+            )
+
         # Bilinear attention for span start/end
         self.start_attn = BilinearSeqAttn(
             doc_hidden_size,
@@ -363,6 +378,13 @@ class DrQA(nn.Module):
             new_attn = torch.cat((q_merge_weights_f, out_attentions['q_dialog_attn']), 2)
             out_attentions['q_dialog_attn'] = new_attn
         question_hidden = weighted_avg(question_hiddens, q_merge_weights)
+
+        if self.config['qhier_rnn']:
+            # Re-encode question vectors with forward LSTM
+            qh_mask = torch.zeros(1, question_hidden.shape[0], requires_grad=False, dtype=torch.uint8)
+            if self.config['cuda']:
+                qh_mask = qh_mask.cuda()
+            question_hidden = self.qhier_rnn(question_hidden.unsqueeze(0), qh_mask).squeeze(0)
 
         # ==== DOCUMENT ====
         # Add attention-weighted question representation
