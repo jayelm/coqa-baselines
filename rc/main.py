@@ -90,7 +90,7 @@ def get_args():
                        default='word_emb', help='How to compute attention over past dialog')
     group.add_argument('--q_dialog_attn_incr_merge', type=str, choices=['average', 'linear_current', 'linear_both', 'lstm', 'linear_both_lstm'],
                        default='average', help='In the incremental case, how to average past and current representations')
-    group.add_argument('--q_dialog_attn_scoring', type=str, choices=['linear_relu', 'fully_aware', 'bilinear'],
+    group.add_argument('--q_dialog_attn_scoring', type=str, choices=['linear_relu', 'linear_relu_asym', 'fully_aware', 'bilinear'],
                        default='linear_relu', help='How to score interactions between hidden states (right now implented for word_hidden_incr only)')
     group.add_argument('--qa_emb_markers', type=str2bool, default=False,
                        help='Add qa markers to embeddings')

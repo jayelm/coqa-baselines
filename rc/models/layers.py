@@ -415,6 +415,9 @@ class IncrSeqAttnMatch(nn.Module):
 
         if self.scoring == 'linear_relu':
             self.linear = nn.Linear(true_input_size, hidden_size)
+        elif self.scoring == 'linear_relu_asym':
+            self.linear1 = nn.Linear(true_input_size, hidden_size)
+            self.linear2 = nn.Linear(true_input_size, hidden_size)
         elif self.scoring == 'fully_aware':
             # https://arxiv.org/pdf/1711.07341.pdf
             self.linear = nn.Linear(true_input_size, hidden_size)
@@ -477,9 +480,17 @@ class IncrSeqAttnMatch(nn.Module):
         xq_proj = self.project(xq_emb_m)
         xa_proj = self.project(xa_emb_m)
 
+        # Project history vectors with a different linear layer
+        if self.scoring == 'linear_relu_asym':
+            xq_proj_h = self.project(xq_emb_m, history=True)
+            xa_proj_h = self.project(xa_emb_m, history=True)
+        else:
+            xq_proj_h = xq_proj
+            xa_proj_h = xa_proj
+
         # Form dialog
         d_plus = [xq_emb[0], xa_emb[0]]  # Don't use answer marker features here
-        d_proj = [xq_proj[0], xa_proj[0]]
+        d_proj = [xq_proj_h[0], xa_proj_h[0]]  # History (optionally) projected differently
         if out_attention:
             # Used in case d_mask has masked answers. We use d_mask to zero out answers, but
             # this unmask to keep them in the final output
@@ -495,15 +506,15 @@ class IncrSeqAttnMatch(nn.Module):
             out_scores = []
         # Loop through qa pairs
         # int, (max_q_len * k), (max_a_len * k), (max_q_len * h), (max_q_len * h)
-        embs = zip(xq_emb[1:], xa_emb[1:], xq_proj[1:], xa_proj[1:])
-        for t, (xq_t, xa_t, xq_t_proj, xa_t_proj) in enumerate(embs, 1):
+        embs = zip(xq_emb[1:], xa_emb[1:], xq_proj[1:], xa_proj[1:], xq_proj_h[1:], xa_proj_h[1:])
+        for t, (xq_t, xa_t, xq_t_proj, xa_t_proj, xq_t_proj_h, xa_t_proj_h) in enumerate(embs, 1):
             xq_t_plus, alpha, keep_p, dm = self.attend(
                 t, xq_t, xq_t_proj,
                 d_plus, d_proj, d_mask)
 
             # Append augmented q to history
             d_plus.append(xq_t_plus)
-            d_proj.append(xq_t_proj)
+            d_proj.append(xq_t_proj_h)
             d_mask.append(xq_mask[t])
 
             if out_attention:  # Save attention weights, remove nonexistent qa
@@ -522,7 +533,7 @@ class IncrSeqAttnMatch(nn.Module):
 
             # Append (possibly augmented) a to history
             d_plus.append(xa_t_plus)
-            d_proj.append(xa_t_proj)
+            d_proj.append(xa_t_proj_h)
             if self.mask_answers:
                 d_mask.append(torch.ones_like(xa_mask[t]))
             else:
@@ -598,16 +609,25 @@ class IncrSeqAttnMatch(nn.Module):
         out_scores = torch.cat((torch.zeros_like(out_scores[0:1]), out_scores), 0)
         return out_scores
 
-    def project(self, x):
+    def project(self, x, history=False):
         """
         Project vectors using the mechanism described by self.scoring.
         """
         # All attention mechanisms require linear projection.
+        if self.scoring == 'linear_relu_asym':
+            if history:
+                linear_layer = self.linear1
+            else:
+                linear_layer = self.linear2
+        else:
+            if history:
+                print("Warning: history flag does nothing if linear_relu_asym not set")
+            linear_layer = self.linear
         if len(x.shape) == 3:
             # Reshape first.
-            x_proj = self.linear(x.view(-1, x.size(2))).view((x.shape[:2] + (-1, )))
+            x_proj = linear_layer(x.view(-1, x.size(2))).view((x.shape[:2] + (-1, )))
         elif len(x.shape) == 2:
-            x_proj = self.linear(x)
+            x_proj = linear_layer(x)
         else:
             raise ValueError("Incompatible shape for projection {}".format(x.shape))
 
