@@ -20,8 +20,8 @@ python rc/main.py --trainset data/coqa/coqa-train-v1.0-processed.json --devset d
     --dialog_batched true --batch_size 2 \
     --q_dialog_history true --q_dialog_attn word_hidden_incr \
     --attn_hidden_size 250 \
-    --q_dialog_attn_scoring linear_relu \
-    --q_dialog_attn_incr_merge linear_both_lstm \
+    --q_dialog_attn_scoring linear_relu_asym \
+    --q_dialog_attn_incr_merge linear_both \
     --recency_bias true \
     --qa_emb_markers true \
-    --standardize_endings artificial
+    --standardize_endings standard_question

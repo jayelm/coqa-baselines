@@ -633,13 +633,15 @@ class IncrSeqAttnMatch(nn.Module):
 
         if self.scoring == 'linear_relu':
             x_proj = F.relu(x_proj)
+        elif self.scoring == 'linear_relu_asym':
+            x_proj = F.relu(x_proj)
         elif self.scoring == 'bilinear':
             # Don't do anything more, we just compute raw dot product.
             pass
         elif self.scoring == 'fully_aware':
             x_proj = F.relu(x_proj)
         else:
-            raise NotImplementedError
+            raise NotImplementedError("projection: {}".format(self.scoring))
         return x_proj
 
     def score(self, x, y):
