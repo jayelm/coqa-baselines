@@ -81,7 +81,7 @@ def load_vocab(vocab_file):
     return vocab
 
 
-def convert_tokens_to_ids(vocab, tokens):
+def convert_tokens_to_ids(vocab, tokens, unk_token="[UNK]"):
     """Converts a sequence of tokens into ids using the vocab."""
     ids = []
     for token in tokens:
@@ -129,9 +129,12 @@ class BasicTokenizer(object):
         """
         self.do_lower_case = do_lower_case
 
-    def tokenize(self, text):
+    def tokenize(self, text, return_offsets=False, id=None):
         """Tokenizes a piece of text."""
         text = convert_to_unicode(text)
+        orig_text = text
+        if self.do_lower_case:
+            orig_text = orig_text.lower()
         text = self._clean_text(text)
         # This was added on November 1st, 2018 for the multilingual and Chinese
         # models. This is also applied to the English models now, but it doesn't
@@ -149,6 +152,32 @@ class BasicTokenizer(object):
             split_tokens.extend(self._run_split_on_punc(token))
 
         output_tokens = whitespace_tokenize(" ".join(split_tokens))
+        current_offset = 0
+        if return_offsets:
+            offsets = []
+            # Return offsets by looping through tokens and finding where they start in the original text
+            for token in output_tokens:
+                # Check first char. If unequal it better be whitespace
+                n_skipped = 0
+                while orig_text[current_offset] != token[0]:
+                    if not _is_whitespace(orig_text[current_offset]):
+                        print("Warning: skipping character {} for token {}, question {}".format(orig_text[current_offset], token, id))
+                    current_offset += 1
+                    n_skipped += 1
+                if n_skipped > 10:
+                    print("Warning: had to skip over 10 characters to re-align ({} {})".format(token, id))
+                    import ipdb; ipdb.set_trace()
+                # Now we have a match
+                offset_start = current_offset
+                for char in token:
+                    if orig_text[current_offset] != char:
+                        print("Warning: token mismatch ({}) for question {}".format(token, id))
+                        import ipdb; ipdb.set_trace()
+                    current_offset += 1
+                offset_end = current_offset
+                offsets.append([offset_start, offset_end])
+            return output_tokens, offsets
+
         return output_tokens
 
     def _run_strip_accents(self, text):
@@ -181,7 +210,7 @@ class BasicTokenizer(object):
             i += 1
 
         return ["".join(x) for x in output]
-    
+
     def _tokenize_chinese_chars(self, text):
         """Adds whitespace around any CJK character."""
         output = []
@@ -214,20 +243,26 @@ class BasicTokenizer(object):
             (cp >= 0xF900 and cp <= 0xFAFF) or  #
             (cp >= 0x2F800 and cp <= 0x2FA1F)):  #
             return True
-    
+
         return False
-    
-    def _clean_text(self, text):
+
+    def _clean_text(self, text, return_breaks=False):
         """Performs invalid character removal and whitespace cleanup on text."""
         output = []
-        for char in text:
+        if return_breaks:
+            breaks = []
+        for i, char in enumerate(text):
             cp = ord(char)
             if cp == 0 or cp == 0xfffd or _is_control(char):
+                if return_breaks:
+                    breaks.append(i)
                 continue
             if _is_whitespace(char):
                 output.append(" ")
             else:
                 output.append(char)
+        if return_breaks:
+            return "".join(output), breaks
         return "".join(output)
 
 

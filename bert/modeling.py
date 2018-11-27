@@ -24,6 +24,7 @@ import math
 import six
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 from torch.nn import CrossEntropyLoss
 
 def gelu(x):
@@ -446,13 +447,23 @@ class BertForQuestionAnswering(nn.Module):
                 module.bias.data.zero_()
         self.apply(init_weights)
 
-    def forward(self, input_ids, token_type_ids, attention_mask, start_positions=None, end_positions=None):
+    def forward(self, input_ids, token_type_ids, attention_mask, start_positions=None, end_positions=None,
+                debug=False):
         all_encoder_layers, _ = self.bert(input_ids, token_type_ids, attention_mask)
         sequence_output = all_encoder_layers[-1]
         logits = self.qa_outputs(sequence_output)
         start_logits, end_logits = logits.split(1, dim=-1)
         start_logits = start_logits.squeeze(-1)
         end_logits = end_logits.squeeze(-1)
+
+        if debug:
+            n = lambda x: x.detach().cpu().numpy()
+            pred_start_positions = F.softmax(start_logits, dim=1).argmax(dim=1)
+            pred_end_positions = F.softmax(end_logits, dim=1).argmax(dim=1)
+            # FIXME: Why are sometimes the start positions after the end positions?
+            print("Predicted spans: {}, true spans: {}".format(
+                list(zip(n(pred_start_positions), n(pred_end_positions))),
+                list(zip(n(start_positions), n(end_positions)))))
 
         if start_positions is not None and end_positions is not None:
             # If we are on multi-GPU, split add a dimension

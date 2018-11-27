@@ -1,5 +1,7 @@
 #!/bin/bash
 
+set -e
+
 if [ "$#" -ne 1 ]; then
     echo "Usage: $0 EXP_DIR"
     exit 1
@@ -16,24 +18,22 @@ if [ -d "$1" ]; then
 fi
 
 BERT_BASE_DIR="./bert/models/uncased_L-12_H-768_A-12"
-SQUAD_DIR="./data/squad"
+COQA_DIR="./data/coqa"
 
-python bert/run_squad.py \
+python bert/run_coqa.py \
     --vocab_file "$BERT_BASE_DIR/vocab.txt" \
     --bert_config_file "$BERT_BASE_DIR/bert_config.json" \
     --init_checkpoint "$BERT_BASE_DIR.pth" \
     --do_train \
     --do_predict \
     --do_lower_case \
-    --train_file $SQUAD_DIR/train-v1.1.json \
-    --predict_file $SQUAD_DIR/dev-v1.1.json \
+    --train_file $COQA_DIR/coqa-train-v1.0-processed-bert-uncased.json \
+    --predict_file $COQA_DIR/coqa-dev-v1.0-processed-bert-uncased.json \
     --train_batch_size 12 \
-    --learning_rate 3e-5 \
+    --learning_rate 1e-5 \
     --num_train_epochs 2.0 \
     --max_seq_length 384 \
     --doc_stride 128 \
     --output_dir "$1"
 
-# Evaluate
-echo "==== EVALUATING ===="
-python data/squad/evaluate-v1.1.py data/squad/dev-v1.1.json "$1/predictions.json" | tee "$1/metrics.json"
+python "$COQA_DIR/evaluate-v1.0.py" --data-file "$COQA_DIR/coqa-dev-v1.0.json" --pred-file "$1/predictions.json"
