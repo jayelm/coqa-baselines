@@ -1099,7 +1099,7 @@ class FeatureWriter(object):
     features["input_ids"] = create_int_feature(feature.input_ids)
     features["input_mask"] = create_int_feature(feature.input_mask)
     features["segment_ids"] = create_int_feature(feature.segment_ids)
-    features["history_features"] = tf.train.Feature(float_list=tf.train.FloatList(value=feature.f_history))
+    features["history_features"] = tf.train.Feature(float_list=tf.train.FloatList(value=list(map(float, feature.f_history))))
 
     if self.is_training:
       features["start_positions"] = create_int_feature([feature.start_position])

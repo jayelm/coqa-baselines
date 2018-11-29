@@ -576,7 +576,7 @@ def convert_coqa_examples_to_features(examples, tokenizer, max_seq_length,
                     segment_ids=segment_ids,
                     start_position=start_position,
                     end_position=end_position,
-                    f_history=np.concatenate(history_features).astype(np.float32),
+                    f_history=np.concatenate(history_features).astype(np.uint8),
                     coqa_id=coqa_id,
                     turn_id=turn_id,
                     is_impossible=False)
@@ -743,22 +743,28 @@ def write_predictions(all_examples, all_features, all_results, n_best_size,
                     break
                 feature = features[pred.feature_index]
 
-                tok_tokens = feature.tokens[pred.start_index:(pred.end_index + 1)]
+                #  tok_tokens = feature.tokens[pred.start_index:(pred.end_index + 1)]
                 orig_doc_start = feature.token_to_orig_map[pred.start_index]
                 orig_doc_end = feature.token_to_orig_map[pred.end_index]
-                orig_tokens = example['evidence'][orig_doc_start:(orig_doc_end + 1)]
-                tok_text = " ".join(tok_tokens)
+
+                # Get real original tokens
+                orig_offsets = example['offsets'][orig_doc_start:(orig_doc_end + 1)]
+                real_orig_text = example['raw_evidence'][orig_offsets[0][0]:orig_offsets[-1][1]]
+                #  real_orig_tokens = [example['raw_evidence'][off[0]:off[1]] for off in orig_offsets]
+
+                #  tok_text = " ".join(tok_tokens)
 
                 # De-tokenize WordPieces that have been split off.
-                tok_text = tok_text.replace(" ##", "")
-                tok_text = tok_text.replace("##", "")
+                #  tok_text = tok_text.replace(" ##", "")
+                #  tok_text = tok_text.replace("##", "")
 
                 # Clean whitespace
-                tok_text = tok_text.strip()
-                tok_text = " ".join(tok_text.split())
-                orig_text = " ".join(orig_tokens)
+                #  tok_text = tok_text.strip()
+                #  tok_text = " ".join(tok_text.split())
+                #  orig_text = " ".join(real_orig_tokens)
 
-                final_text = get_final_text(tok_text, orig_text, do_lower_case, verbose_logging)
+                #  final_text = get_final_text(tok_text, orig_text, do_lower_case, verbose_logging)
+                final_text = real_orig_text
                 if final_text in seen_predictions:
                     continue
 
