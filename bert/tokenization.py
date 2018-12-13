@@ -20,73 +20,41 @@ from __future__ import print_function
 
 import collections
 import unicodedata
-import six
+import os
+import logging
 
+from file_utils import cached_path
 
-def convert_to_unicode(text):
-    """Converts `text` to Unicode (if it's not already), assuming utf-8 input."""
-    if six.PY3:
-        if isinstance(text, str):
-            return text
-        elif isinstance(text, bytes):
-            return text.decode("utf-8", "ignore")
-        else:
-            raise ValueError("Unsupported string type: %s" % (type(text)))
-    elif six.PY2:
-        if isinstance(text, str):
-            return text.decode("utf-8", "ignore")
-        elif isinstance(text, unicode):
-            return text
-        else:
-            raise ValueError("Unsupported string type: %s" % (type(text)))
-    else:
-        raise ValueError("Not running on Python2 or Python 3?")
+logging.basicConfig(format = '%(asctime)s - %(levelname)s - %(name)s -   %(message)s', 
+                    datefmt = '%m/%d/%Y %H:%M:%S',
+                    level = logging.INFO)
+logger = logging.getLogger(__name__)
 
-
-def printable_text(text):
-    """Returns text encoded in a way suitable for print or `tf.logging`."""
-
-    # These functions want `str` for both Python2 and Python3, but in one case
-    # it's a Unicode string and in the other it's a byte string.
-    if six.PY3:
-        if isinstance(text, str):
-            return text
-        elif isinstance(text, bytes):
-            return text.decode("utf-8", "ignore")
-        else:
-            raise ValueError("Unsupported string type: %s" % (type(text)))
-    elif six.PY2:
-        if isinstance(text, str):
-            return text
-        elif isinstance(text, unicode):
-            return text.encode("utf-8")
-        else:
-            raise ValueError("Unsupported string type: %s" % (type(text)))
-    else:
-        raise ValueError("Not running on Python2 or Python 3?")
+PRETRAINED_VOCAB_ARCHIVE_MAP = {
+    'bert-base-uncased': "https://s3.amazonaws.com/models.huggingface.co/bert/bert-base-uncased-vocab.txt",
+    'bert-large-uncased': "https://s3.amazonaws.com/models.huggingface.co/bert/bert-large-uncased-vocab.txt",
+    'bert-base-cased': "https://s3.amazonaws.com/models.huggingface.co/bert/bert-base-cased-vocab.txt",
+    'bert-large-cased': "https://s3.amazonaws.com/models.huggingface.co/bert/bert-large-cased-vocab.txt",
+    'bert-base-multilingual-uncased': "https://s3.amazonaws.com/models.huggingface.co/bert/bert-base-multilingual-uncased-vocab.txt",
+    'bert-base-multilingual-cased': "https://s3.amazonaws.com/models.huggingface.co/bert/bert-base-multilingual-cased-vocab.txt",
+    'bert-base-chinese': "https://s3.amazonaws.com/models.huggingface.co/bert/bert-base-chinese-vocab.txt",
+}
+VOCAB_NAME = 'vocab.txt'
 
 
 def load_vocab(vocab_file):
     """Loads a vocabulary file into a dictionary."""
     vocab = collections.OrderedDict()
     index = 0
-    with open(vocab_file, "r") as reader:
+    with open(vocab_file, "r", encoding="utf-8") as reader:
         while True:
-            token = convert_to_unicode(reader.readline())
+            token = reader.readline()
             if not token:
                 break
             token = token.strip()
             vocab[token] = index
             index += 1
     return vocab
-
-
-def convert_tokens_to_ids(vocab, tokens, unk_token="[UNK]"):
-    """Converts a sequence of tokens into ids using the vocab."""
-    ids = []
-    for token in tokens:
-        ids.append(vocab[token])
-    return ids
 
 
 def whitespace_tokenize(text):
@@ -98,11 +66,16 @@ def whitespace_tokenize(text):
     return tokens
 
 
-class FullTokenizer(object):
-    """Runs end-to-end tokenziation."""
-
+class BertTokenizer(object):
+    """Runs end-to-end tokenization: punctuation splitting + wordpiece"""
     def __init__(self, vocab_file, do_lower_case=True):
+        if not os.path.isfile(vocab_file):
+            raise ValueError(
+                "Can't find a vocabulary file at path '{}'. To load the vocabulary from a Google pretrained "
+                "model use `tokenizer = BertTokenizer.from_pretrained(PRETRAINED_MODEL_NAME)`".format(vocab_file))
         self.vocab = load_vocab(vocab_file)
+        self.ids_to_tokens = collections.OrderedDict(
+            [(ids, tok) for tok, ids in self.vocab.items()])
         self.basic_tokenizer = BasicTokenizer(do_lower_case=do_lower_case)
         self.wordpiece_tokenizer = WordpieceTokenizer(vocab=self.vocab)
 
@@ -111,11 +84,54 @@ class FullTokenizer(object):
         for token in self.basic_tokenizer.tokenize(text):
             for sub_token in self.wordpiece_tokenizer.tokenize(token):
                 split_tokens.append(sub_token)
-
         return split_tokens
 
     def convert_tokens_to_ids(self, tokens):
-        return convert_tokens_to_ids(self.vocab, tokens)
+        """Converts a sequence of tokens into ids using the vocab."""
+        ids = []
+        for token in tokens:
+            ids.append(self.vocab[token])
+        return ids
+
+    def convert_ids_to_tokens(self, ids):
+        """Converts a sequence of ids in wordpiece tokens using the vocab."""
+        tokens = []
+        for i in ids:
+            tokens.append(self.ids_to_tokens[i])
+        return tokens
+
+    @classmethod
+    def from_pretrained(cls, pretrained_model_name, cache_dir=None, *inputs, **kwargs):
+        """
+        Instantiate a PreTrainedBertModel from a pre-trained model file.
+        Download and cache the pre-trained model file if needed.
+        """
+        if pretrained_model_name in PRETRAINED_VOCAB_ARCHIVE_MAP:
+            vocab_file = PRETRAINED_VOCAB_ARCHIVE_MAP[pretrained_model_name]
+        else:
+            vocab_file = pretrained_model_name
+        if os.path.isdir(vocab_file):
+            vocab_file = os.path.join(vocab_file, VOCAB_NAME)
+        # redirect to the cache, if necessary
+        try:
+            resolved_vocab_file = cached_path(vocab_file, cache_dir=cache_dir)
+        except FileNotFoundError:
+            logger.error(
+                "Model name '{}' was not found in model name list ({}). "
+                "We assumed '{}' was a path or url but couldn't find any file "
+                "associated to this path or url.".format(
+                    pretrained_model_name,
+                    ', '.join(PRETRAINED_VOCAB_ARCHIVE_MAP.keys()),
+                    vocab_file))
+            return None
+        if resolved_vocab_file == vocab_file:
+            logger.info("loading vocabulary file {}".format(vocab_file))
+        else:
+            logger.info("loading vocabulary file {} from cache at {}".format(
+                vocab_file, resolved_vocab_file))
+        # Instantiate tokenizer.
+        tokenizer = cls(resolved_vocab_file, *inputs, **kwargs)
+        return tokenizer
 
 
 class BasicTokenizer(object):
@@ -129,12 +145,8 @@ class BasicTokenizer(object):
         """
         self.do_lower_case = do_lower_case
 
-    def tokenize(self, text, return_offsets=False, id=None):
+    def tokenize(self, text):
         """Tokenizes a piece of text."""
-        text = convert_to_unicode(text)
-        orig_text = text
-        if self.do_lower_case:
-            orig_text = orig_text.lower()
         text = self._clean_text(text)
         # This was added on November 1st, 2018 for the multilingual and Chinese
         # models. This is also applied to the English models now, but it doesn't
@@ -152,32 +164,6 @@ class BasicTokenizer(object):
             split_tokens.extend(self._run_split_on_punc(token))
 
         output_tokens = whitespace_tokenize(" ".join(split_tokens))
-        current_offset = 0
-        if return_offsets:
-            offsets = []
-            # Return offsets by looping through tokens and finding where they start in the original text
-            for token in output_tokens:
-                # Check first char. If unequal it better be whitespace
-                n_skipped = 0
-                while orig_text[current_offset] != token[0]:
-                    if not _is_whitespace(orig_text[current_offset]):
-                        print("Warning: skipping character {} for token {}, question {}".format(orig_text[current_offset], token, id))
-                    current_offset += 1
-                    n_skipped += 1
-                if n_skipped > 10:
-                    print("Warning: had to skip over 10 characters to re-align ({} {})".format(token, id))
-                    import ipdb; ipdb.set_trace()
-                # Now we have a match
-                offset_start = current_offset
-                for char in token:
-                    if orig_text[current_offset] != char:
-                        print("Warning: token mismatch ({}) for question {}".format(token, id))
-                        import ipdb; ipdb.set_trace()
-                    current_offset += 1
-                offset_end = current_offset
-                offsets.append([offset_start, offset_end])
-            return output_tokens, offsets
-
         return output_tokens
 
     def _run_strip_accents(self, text):
@@ -210,7 +196,7 @@ class BasicTokenizer(object):
             i += 1
 
         return ["".join(x) for x in output]
-
+    
     def _tokenize_chinese_chars(self, text):
         """Adds whitespace around any CJK character."""
         output = []
@@ -243,26 +229,20 @@ class BasicTokenizer(object):
             (cp >= 0xF900 and cp <= 0xFAFF) or  #
             (cp >= 0x2F800 and cp <= 0x2FA1F)):  #
             return True
-
+    
         return False
-
-    def _clean_text(self, text, return_breaks=False):
+    
+    def _clean_text(self, text):
         """Performs invalid character removal and whitespace cleanup on text."""
         output = []
-        if return_breaks:
-            breaks = []
-        for i, char in enumerate(text):
+        for char in text:
             cp = ord(char)
             if cp == 0 or cp == 0xfffd or _is_control(char):
-                if return_breaks:
-                    breaks.append(i)
                 continue
             if _is_whitespace(char):
                 output.append(" ")
             else:
                 output.append(char)
-        if return_breaks:
-            return "".join(output), breaks
         return "".join(output)
 
 
@@ -291,8 +271,6 @@ class WordpieceTokenizer(object):
         Returns:
           A list of wordpiece tokens.
         """
-
-        text = convert_to_unicode(text)
 
         output_tokens = []
         for token in whitespace_tokenize(text):

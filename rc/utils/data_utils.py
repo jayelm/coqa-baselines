@@ -201,6 +201,117 @@ class DialogBatchedCoQADataset(Dataset):
             document = ex['annotated_context']
 
             questions = []
+            raw_questions = []
+            answers = []
+            annotated_answers = []
+            answer_spans = []
+
+            history = []
+            histories = []
+
+            for qa in ex['qas']:
+                # Add question to list
+                q = qa['annotated_question']
+                questions.append(q)
+                raw_questions.append(qa['question'])
+
+                # Add answer spans to list
+                a = qa['answer_span']
+                answer_spans.append(a)
+
+                # Add real answers to list, + additional answers
+                this_answer = [qa['answer']]
+                if 'additional_answers' in qa:
+                    this_answer += qa['additional_answers']
+                answers.append(this_answer)
+
+                annotated_answer = qa['annotated_answer']
+                annotated_answers.append(annotated_answer)
+
+                # Increment vocab
+                for w in q['word']:
+                    self.vocab[w] += 1
+                # Use actual answer text, not span
+                for w in qa['annotated_answer']['word']:
+                    self.vocab[w] += 1
+                # Add document vocab several times
+                for w in document['word']:
+                    self.vocab[w] += 1
+
+                # History
+                temp = []
+                #  import pdb; pdb.set_trace()
+                #  history.append((qa['annotated_question']['word'], qa['annotated_answer']['word']))  # TEMP: Cheating
+                n_history = len(history) if config['n_history'] < 0 else min(config['n_history'], len(history))
+                if n_history > 0:
+                    for i, (q, a) in enumerate(history[-n_history:]):
+                        d = n_history - i
+                        temp.append('<Q{}>'.format(d))
+                        temp.extend(q)
+                        temp.append('<A{}>'.format(d))
+                        temp.extend(a)
+                histories.append(temp)
+                history.append((qa['annotated_question']['word'], qa['annotated_answer']['word']))
+
+            assert len(histories) == len(questions)
+            assert len(histories) == len(answers)
+            assert len(questions) == dialog_len
+            self.examples.append({
+                'id': ex_i,
+                'coqa_id': ex['id'],
+                'dialog_len': dialog_len,
+                'document_len': document_len,
+                'max_q_len': max_q_len,
+                'q_lengths': q_lengths,
+                'evidence': document,
+                'questions': questions,
+                'raw_questions': raw_questions,
+                'answers': answers,
+                'annotated_answers': annotated_answers,
+                'histories': histories,
+                'targets': answer_spans,
+                'raw_evidence': ex['context']
+            })
+
+        timer.finish()
+
+    def __len__(self):
+        return 50 if self.config['debug'] else len(self.examples)
+
+    def __getitem__(self, idx):
+        return self.examples[idx]
+
+
+class DialogBatchedCoQADatasetRaw(Dataset):
+    """CoQA dataset, but batched by dialogs"""
+
+    def __init__(self, filename, config):
+        timer = Timer('Load %s' % filename)
+        self.filename = filename
+        self.config = config
+        paragraph_lens = []
+        question_lens = []
+        self.vocab = Counter()
+
+        coqa = read_json(filename)
+
+        self.examples = []
+
+        for ex_i, ex in tqdm(enumerate(coqa['data']), desc='Loading CoQA data',
+                             total=len(coqa['data'])):
+            # Determine lengths
+            dialog_len = len(ex['qas'])
+            document_len = len(ex['annotated_context']['word'])
+            q_lengths = np.array(
+                [len(qa['annotated_question']['word']) for qa in ex['qas']],
+                dtype=np.int64
+            )
+            max_q_len = int(max(q_lengths))
+
+            # Retrieve context 
+            document = ex['annotated_context']
+
+            questions = []
             answers = []
             annotated_answers = []
             answer_spans = []
@@ -274,8 +385,6 @@ class DialogBatchedCoQADataset(Dataset):
 
     def __getitem__(self, idx):
         return self.examples[idx]
-
-
 
 ################################################################################
 # Read & Write Helper Functions #
@@ -353,8 +462,76 @@ def sanitize_input(sample_batch, config, vocab, feature_dict, training=True):
     return sanitized_batch
 
 
+class ID:
+    def __getitem__(self, key):
+        return key
+
+    def __contains__(self, key):
+        return True
+
+
+def sanitize_input_bert(ex, feature_dict, cased=True):
+    sanitized_ex = {}
+    evidence = ex['evidence']['word']
+    if not cased:
+        evidence = [w.lower() for w in evidence]
+    sanitized_ex['evidence'] = evidence
+
+    # Just transfer over targets/answers directly
+    sanitized_ex['targets'] = ex['targets']
+    sanitized_ex['offsets'] = ex['evidence']['offsets']
+    sanitized_ex['raw_evidence'] = ex['raw_evidence']
+    # These are raw answers; annotated answers used later
+    sanitized_ex['answers'] = ex['answers']
+    sanitized_ex['id'] = ex['id']
+
+    processed_qs = []
+    processed_as = []
+    features = []
+
+    for annotated_question, history, annotated_answer in zip(ex['questions'],
+                                                             ex['histories'],
+                                                             ex['annotated_answers']):
+        question = annotated_question['word']
+        # Sanitize end of questions.
+        if not question:
+            question = ["[UNK]", "?"]
+        elif question[-1] != '?':
+            question.append('?')
+
+        if not cased:
+            question = [w.lower() for w in question]
+
+        processed_qs.append(question)
+
+        # Answer processing. Just pick first answer
+        answer = annotated_answer['word']
+        if not answer:
+            # Answer tokens were unicode or something else that caused
+            # stanfordnlp annotation errors, so this is empty. Replace with a
+            # single UNK token.
+            answer = ["[UNK]"]
+
+        if not cased:
+            answer = [w.lower() for w in answer]
+
+        processed_as.append(answer)
+
+        #  import pdb; pdb.set_trace()
+        features.append(featurize(annotated_question, ex['evidence'],
+                                  feature_dict, history, tensor_type='numpy'))
+
+    sanitized_ex['questions'] = processed_qs
+    sanitized_ex['annotated_answers'] = processed_as
+    sanitized_ex['features'] = features
+    sanitized_ex['coqa_id'] = ex['coqa_id']
+
+    return sanitized_ex
+
+
+
 def sanitize_input_dialog_batched(ex, config, vocab,
-                                  feature_dict, training=True):
+                                  feature_dict, training=True, cased=True):
     """
     Reformats sample_batch for easy vectorization - dialog batched version.
     Args:
@@ -363,10 +540,14 @@ def sanitize_input_dialog_batched(ex, config, vocab,
         feature_dict: the features we want to concatenate to our embeddings.
         train: train or test?
     """
+    if vocab is None:
+        vocab = ID()
     sanitized_ex = {}
     evidence = ex['evidence']['word']
     processed_e = [vocab[w] if w in vocab else vocab[Constants._UNK_TOKEN]
                    for w in evidence]
+    if not cased:
+        processed_e = [w.lower() for w in processed_e]
     offsets = ex['evidence']['offsets']
 
     if config['predict_raw_text']:
@@ -387,9 +568,10 @@ def sanitize_input_dialog_batched(ex, config, vocab,
     processed_as = []
     features = []
 
-    for annotated_question, history, annotated_answer in zip(ex['questions'],
-                                                             ex['histories'],
-                                                             ex['annotated_answers']):
+    for annotated_question, raw_question, history, annotated_answer in zip(ex['questions'],
+                                                                           ex['raw_questions'],
+                                                                           ex['histories'],
+                                                                           ex['annotated_answers']):
         question = annotated_question['word']
         # Sanitize end of questions.
         if config['standardize_endings'] == 'standard' or config['standardize_endings'] == 'standard_question':
@@ -411,6 +593,8 @@ def sanitize_input_dialog_batched(ex, config, vocab,
             vocab[w] if w in vocab else vocab[Constants._UNK_TOKEN]
             for w in question
         ]
+        if not cased:
+            processed_q = [w.lower() for w in processed_q]
 
         processed_qs.append(processed_q)
 
@@ -434,9 +618,12 @@ def sanitize_input_dialog_batched(ex, config, vocab,
             vocab[w] if w in vocab else vocab[Constants._UNK_TOKEN]
             for w in answer
         ]
+        if not cased:
+            processed_a = [w.lower() for w in processed_a]
 
         processed_as.append(processed_a)
 
+        # FIXME: If uncased, this duplicates features
         features.append(featurize(annotated_question, ex['evidence'],
                                   feature_dict, history))
         if config['predict_raw_text']:
@@ -635,9 +822,14 @@ def vectorize_input(batch, config, training=True, device=None):
     return example
 
 
-def featurize(question, document, feature_dict, history=None):
+def featurize(question, document, feature_dict, history=None, tensor_type='torch'):
     doc_len = len(document['word'])
-    features = torch.zeros(doc_len, len(feature_dict))
+    if tensor_type == 'torch':
+        features = torch.zeros(doc_len, len(feature_dict), dtype=torch.float32)
+    elif tensor_type == 'numpy':
+        features = np.zeros((doc_len, len(feature_dict)), dtype=np.uint8)
+    else:
+        raise NotImplementedError(tensor_type)
     q_cased_words = set([w for w in question['word']])
     q_uncased_words = set([w.lower() for w in question['word']])
 
@@ -662,21 +854,21 @@ def featurize(question, document, feature_dict, history=None):
     for i in range(doc_len):
         d_word = document['word'][i]
         if 'f_qem_cased' in feature_dict and d_word in q_cased_words:
-            features[i][feature_dict['f_qem_cased']] = 1.0
+            features[i][feature_dict['f_qem_cased']] = 1
         if 'f_qem_uncased' in feature_dict and d_word.lower() in q_uncased_words:
-            features[i][feature_dict['f_qem_uncased']] = 1.0
+            features[i][feature_dict['f_qem_uncased']] = 1
         if 'pos' in document:
             f_pos = 'f_pos={}'.format(document['pos'][i])
             if f_pos in feature_dict:
-                features[i][feature_dict[f_pos]] = 1.0
+                features[i][feature_dict[f_pos]] = 1
         if 'ner' in document:
             f_ner = 'f_ner={}'.format(document['ner'][i])
             if f_ner in feature_dict:
-                features[i][feature_dict[f_ner]] = 1.0
+                features[i][feature_dict[f_ner]] = 1
         for f in cased_words:
             if d_word in cased_words[f]:
-                features[i][feature_dict[f]] = 1.0
+                features[i][feature_dict[f]] = 1
         for f in uncased_words:
             if d_word.lower() in uncased_words[f]:
-                features[i][feature_dict[f]] = 1.0
+                features[i][feature_dict[f]] = 1
     return features

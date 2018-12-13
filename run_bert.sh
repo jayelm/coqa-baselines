@@ -31,9 +31,10 @@ python bert/run_coqa.py \
     --predict_file $COQA_DIR/coqa-dev-v1.0-processed-bert-uncased.json \
     --train_batch_size 12 \
     --learning_rate 1e-5 \
-    --num_train_epochs 2.0 \
+    --num_train_epochs 8.0 \
     --max_seq_length 384 \
     --doc_stride 128 \
+    --save_checkpoints_steps 4000 \
     --output_dir "$1"
 
 python "$COQA_DIR/evaluate-v1.0.py" --data-file "$COQA_DIR/coqa-dev-v1.0.json" --pred-file "$1/predictions.json"

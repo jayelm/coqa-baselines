@@ -47,9 +47,8 @@ class SquadExample(object):
 
     def __repr__(self):
         s = ""
-        s += "qas_id: %s" % (tokenization.printable_text(self.qas_id))
-        s += ", question_text: %s" % (
-            tokenization.printable_text(self.question_text))
+        s += "qas_id: %s" % (self.qas_id)
+        s += ", question_text: %s" % (self.question_text)
         s += ", doc_tokens: [%s]" % (" ".join(self.doc_tokens))
         if self.start_position:
             s += ", start_position: %d" % (self.start_position)
@@ -92,6 +91,9 @@ class InputFeatures(object):
         self.coqa_id = coqa_id
         self.turn_id = turn_id
         self.is_impossible = is_impossible
+
+    def __str__(self):
+        return 'DOC\n{},\n\span: ({}, {})'.format(self.tokens, self.start_position, self.end_position)
 
 
 def read_squad_examples(input_file, is_training):
@@ -363,9 +365,9 @@ def convert_examples_to_features(examples, tokenizer, max_seq_length,
                 logger.info("tokens: %s" % " ".join(
                     [tokenization.printable_text(x) for x in tokens]))
                 logger.info("token_to_orig_map: %s" % " ".join(
-                    ["%d:%d" % (x, y) for (x, y) in six.iteritems(token_to_orig_map)]))
+                    ["%d:%d" % (x, y) for (x, y) in token_to_orig_map.items()]))
                 logger.info("token_is_max_context: %s" % " ".join([
-                    "%d:%s" % (x, y) for (x, y) in six.iteritems(token_is_max_context)
+                    "%d:%s" % (x, y) for (x, y) in token_is_max_context.items()
                 ]))
                 logger.info("input_ids: %s" % " ".join([str(x) for x in input_ids]))
                 logger.info(
@@ -377,7 +379,8 @@ def convert_examples_to_features(examples, tokenizer, max_seq_length,
                     logger.info("start_position: %d" % (start_position))
                     logger.info("end_position: %d" % (end_position))
                     logger.info(
-                        "answer: %s" % (tokenization.printable_text(answer_text)))
+                        "answer: %s" % (answer_text))
+
 
             features.append(
                 InputFeatures(
@@ -542,8 +545,7 @@ def convert_coqa_examples_to_features(examples, tokenizer, max_seq_length,
                     logger.info("turn_id: %s" % (turn_id))
                     logger.info("example_index: %s" % (example_index))
                     logger.info("doc_span_index: %s" % (doc_span_index))
-                    logger.info("tokens: %s" % " ".join(
-                        [tokenization.printable_text(x) for x in tokens]))
+                    logger.info("tokens: %s" % " ".join(tokens))
                     logger.info("token_to_orig_map: %s" % " ".join(
                         ["%d:%d" % (x, y) for (x, y) in six.iteritems(token_to_orig_map)]))
                     logger.info("token_is_max_context: %s" % " ".join([
@@ -559,10 +561,18 @@ def convert_coqa_examples_to_features(examples, tokenizer, max_seq_length,
                         logger.info("start_position: %d" % (start_position))
                         logger.info("end_position: %d" % (end_position))
                         logger.info(
-                            "answer: %s" % (tokenization.printable_text(answer_text)))
+                            "answer: %s" % answer)
 
                 if len(query_tokens) > max_query_length:
                     query_tokens = query_tokens[0:max_query_length]
+
+                # TEMP CHEATING: Mark correct answer in first feature. 
+                #  import pdb; pdb.set_trace()
+                try:
+                    history_features[start_position] = np.ones_like(history_features[start_position])
+                    history_features[end_position] = np.ones_like(history_features[end_position])
+                except:
+                    pass
 
                 feature = InputFeatures(
                     unique_id=unique_id,
@@ -576,10 +586,18 @@ def convert_coqa_examples_to_features(examples, tokenizer, max_seq_length,
                     segment_ids=segment_ids,
                     start_position=start_position,
                     end_position=end_position,
-                    f_history=np.concatenate(history_features).astype(np.uint8),
+                    f_history=np.stack(history_features).astype(np.uint8),
                     coqa_id=coqa_id,
                     turn_id=turn_id,
                     is_impossible=False)
+                #  import random
+                #  if random.random() < 0.1:
+                    #  print(feature)
+                    #  print("Question: {}".format(feature.tokens[1:feature.tokens.index('[SEP]')]))
+                    #  print("Span answer: {}".format(
+                        #  feature.tokens[feature.start_position:feature.end_position+1]
+                    #  ))
+                    #  import pdb; pdb.set_trace()
                 if output_fn is not None:
                     output_fn(feature)
                 else:
